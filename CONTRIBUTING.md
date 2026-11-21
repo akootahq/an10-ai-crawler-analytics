@@ -93,9 +93,18 @@ and anything a reviewer would not see from the diff.
   and stored data are stable. The version lives in three places (the plugin
   header, `Stable tag` in readme.txt and `AN10_VERSION`); `bin/build.sh` refuses
   to build when they differ.
-- A release is a commit `chore(release): 0.2.0` that bumps the version and adds
-  a `== Changelog ==` entry written for site owners, then a tag `v0.2.0`.
-  WordPress.org holds every release for a security scan of about six hours
+- A release is a pull request that bumps the version and adds a
+  `== Changelog ==` entry written for site owners. Merging it releases it: the
+  Release workflow builds the zip, commits it to WordPress.org as trunk and
+  `tags/0.2.0`, and creates the GitHub release `v0.2.0` with that changelog
+  entry and the zip. A merge that does not change the version releases
+  nothing. The SVN credentials live in the `wordpress-org` environment, which
+  only `main` can use. `bash bin/deploy-wporg.sh --dry-run` after
+  `bin/build.sh` shows what would be committed. The banner, icon and
+  screenshots in SVN `assets/` are not touched by a release.
+- If a release stops half way, run the Release workflow by hand from the
+  Actions tab; it skips whatever is already done.
+- WordPress.org holds every release for a security scan of about six hours
   before it reaches sites.
 
 ## Rules the plugin keeps
