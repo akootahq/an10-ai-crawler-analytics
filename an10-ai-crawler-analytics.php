@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name:       AN10 – AI Crawler Analytics
+ * Plugin Name:       Agent Number 10 – AI Crawler Analytics
  * Description:       See which AI crawlers really visit, verified against each operator's published IP list; which pages they have never fetched; the visits AI answers send you; and what stands between your pages and an AI citation. Nothing phones home.
  * Version:           0.1.0
  * Requires at least: 6.5

@@ -1,6 +1,6 @@
-=== AN10 – AI Crawler Analytics ===
+=== Agent Number 10 – AI Crawler Analytics: Verify GPTBot, ClaudeBot & Track AI Visits ===
 Contributors: agentnumber10
-Tags: aeo, ai crawler, ai visibility, llms.txt, geo
+Tags: ai crawler, robots.txt, chatgpt, analytics, aeo
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.0
@@ -8,11 +8,13 @@ Stable tag: 0.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Verified AI crawler log, visits from ChatGPT and Perplexity, and AEO readiness for every page. Free, no account, stores no IP addresses.
+See which AI bots really crawl your site. GPTBot & ClaudeBot verified against published IPs. Self-hosted, open source, no account, stores no IPs.
 
 == Description ==
 
-Most AI crawler logs trust the user agent. Anyone can send `User-agent: GPTBot`. This plugin checks every claimed AI crawler visit against the IP addresses its operator publishes, and labels it **Verified**, **Spoofed** or **Unverified**. Only verified visits are ever counted as crawler visits. A visit is called Spoofed only when there is no doubt: if it came through a proxy whose real visitor address the plugin cannot see, or the operator's list could not be refreshed for a week, it is Unverified instead, so a real crawler is never accused.
+**Half the "AI crawlers" in your logs may be fake.** Most AI crawler logs trust the user agent. Anyone can send `User-agent: GPTBot`. This plugin checks every claimed AI crawler visit against the IP addresses its operator publishes, and labels it **Verified**, **Spoofed** or **Unverified**. Only verified visits are ever counted as crawler visits. A visit is called Spoofed only when there is no doubt: if it came through a proxy whose real visitor address the plugin cannot see, or the operator's list could not be refreshed for a week, it is Unverified instead, so a real crawler is never accused.
+
+**Open source, self-hosted, no account.** No external service, no API token, no paywall — your traffic data never leaves your server, unlike cloud tools that pipe your logs to their SaaS.
 
 Verification is off until you turn it on, because it means downloading those published lists from each operator. One click on the plugin's screen starts it, and you can turn it off again in Settings.
 
@@ -80,16 +82,20 @@ Human visits cost one string comparison of the user agent. A claimed AI crawler 
 
 No. It observes. Blocking is a different job.
 
+= Is it really open source and free? =
+
+Yes. GPLv2, no paid tier, no account, no external SaaS. The code is yours to read, run and modify.
+
 == Credits ==
 
 The admin screens use the Inter and JetBrains Mono typefaces, bundled under the SIL Open Font License 1.1. The licence and copyright notices are in assets/fonts/OFL.txt.
 
 == Screenshots ==
 
-1. Verified AI crawler fetches, pages fetched and visits from AI answers, by day.
-2. Each AI crawler checked against the addresses its operator publishes, and whether your robots.txt lets it in.
-3. Pages no verified AI crawler has fetched, and the facts behind each page's findings.
-4. A heading proposal to review. Only the heading levels change, and nothing is applied without you.
+1. See who's really crawling you — verified AI crawler fetches, pages fetched and visits from AI answers, by day.
+2. Catch spoofed bots — each AI crawler checked against the addresses its operator publishes, and whether your robots.txt lets it in.
+3. Find the pages AI never read — pages no verified AI crawler has fetched, and the facts behind each page's findings.
+4. Fix it on the spot — a heading proposal to review. Only the heading levels change, and nothing is applied without you.
 
 == Changelog ==
 
