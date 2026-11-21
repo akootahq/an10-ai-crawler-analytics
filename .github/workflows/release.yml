@@ -1,0 +1,106 @@
+name: Release
+
+# Merging a version bump to main releases it: WordPress.org gets trunk and
+# tags/<version>, GitHub gets the release v<version> with the changelog entry and
+# the zip. A push that does not change the version releases nothing.
+# The credentials live in the wordpress-org environment, which only main can use.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Is this version released?
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      release: ${{ steps.check.outputs.release }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          version=$(sed -n 's/^Stable tag: *//p' readme.txt)
+          status=$(curl -s -o /dev/null -w '%{http_code}' "https://plugins.svn.wordpress.org/an10-ai-crawler-analytics/tags/$version/")
+          case "$status" in
+            200) on_wporg=true ;;
+            404) on_wporg=false ;;
+            *) echo "WordPress.org SVN answered $status" >&2; exit 1 ;;
+          esac
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            on_github=true
+          else
+            on_github=false
+          fi
+          # A push releases only a version WordPress.org does not have yet. Run
+          # the workflow by hand to finish a release that stopped half way.
+          release=false
+          if [ "$on_wporg" = false ]; then
+            release=true
+          elif [ "$EVENT" = workflow_dispatch ] && [ "$on_github" = false ]; then
+            release=true
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "$version: WordPress.org $on_wporg, GitHub $on_github, release $release"
+
+  release:
+    name: Release to WordPress.org and GitHub
+    needs: check
+    if: needs.check.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    environment: wordpress-org
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.2'
+          coverage: none
+          tools: composer
+      - run: composer install --no-interaction --no-progress
+      - run: bash bin/build.sh
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq subversion
+      - name: WordPress.org
+        env:
+          SVN_USERNAME: ${{ vars.SVN_USERNAME }}
+          SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
+        run: bash bin/deploy-wporg.sh
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "v$VERSION is already on GitHub."
+            exit 0
+          fi
+          awk -v v="$VERSION" '
+            /^== Changelog ==/ { changelog = 1; next }
+            changelog && $0 == "= " v " =" { on = 1; next }
+            on && /^=/ { exit }
+            on { print }
+          ' readme.txt > notes.md
+          if ! grep -q . notes.md; then
+            echo "readme.txt has no changelog entry for $VERSION" >&2
+            exit 1
+          fi
+          printf '\nOn WordPress.org: https://wordpress.org/plugins/an10-ai-crawler-analytics/\n' >> notes.md
+          gh release create "v$VERSION" "build/an10-ai-crawler-analytics-$VERSION.zip" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "$VERSION" --notes-file notes.md
