@@ -1,6 +1,6 @@
 # AN10 – AI Crawler Analytics
 
-[![CI](https://github.com/agentnumber10/an10-ai-crawler-analytics/actions/workflows/ci.yml/badge.svg)](https://github.com/agentnumber10/an10-ai-crawler-analytics/actions/workflows/ci.yml)
+[![CI](https://github.com/akootahq/an10-ai-crawler-analytics/actions/workflows/ci.yml/badge.svg)](https://github.com/akootahq/an10-ai-crawler-analytics/actions/workflows/ci.yml)
 
 Privacy-first AI crawler analytics for WordPress. Anyone can send
 `User-agent: GPTBot`, so this plugin checks every claimed AI crawler visit
@@ -24,7 +24,7 @@ WordPress 6.5 or later and PHP 8.0 or later. No account and no other plugin.
 ## Install
 
 From a release: download `an10-ai-crawler-analytics-<version>.zip` from the
-[releases page](https://github.com/agentnumber10/an10-ai-crawler-analytics/releases),
+[releases page](https://github.com/akootahq/an10-ai-crawler-analytics/releases),
 then in WordPress go to Plugins, Add New, Upload Plugin, choose the zip and
 activate it. The plugin's screen is AI Crawlers in the admin menu.
 
