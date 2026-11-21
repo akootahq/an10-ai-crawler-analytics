@@ -207,30 +207,32 @@ final class AN10_Verifier {
 			);
 		}
 
-		// A header the site owner told us their own proxy sets.
-		if ( in_array( $trusted, self::TRUSTABLE, true ) && ! empty( $server[ $trusted ] ) ) {
-			$first = trim( explode( ',', (string) $server[ $trusted ] )[0] );
+		// Cloudflare first: a request that really came from Cloudflare carries
+		// the visitor's address in a header the visitor cannot set, whatever
+		// header the site owner also chose in Settings.
+		$from_cloudflare = ! empty( $server['HTTP_CF_CONNECTING_IP'] ) && $cloudflare && AN10_Ip::in_any( $remote, $cloudflare );
+		if ( $from_cloudflare ) {
+			$cf = (string) $server['HTTP_CF_CONNECTING_IP'];
 			return array(
-				'ip'      => filter_var( $first, FILTER_VALIDATE_IP ) ? $first : null,
+				'ip'      => filter_var( $cf, FILTER_VALIDATE_IP ) ? $cf : null,
 				'proxied' => false,
 			);
 		}
 
-		// Cloudflare: trust its header only when the request came from Cloudflare.
-		if ( ! empty( $server['HTTP_CF_CONNECTING_IP'] ) ) {
-			if ( ! $cloudflare ) {
-				return array(
-					'ip'      => null,
-					'proxied' => true,
-				);
-			}
-			if ( AN10_Ip::in_any( $remote, $cloudflare ) ) {
-				$cf = (string) $server['HTTP_CF_CONNECTING_IP'];
-				return array(
-					'ip'      => filter_var( $cf, FILTER_VALIDATE_IP ) ? $cf : null,
-					'proxied' => false,
-				);
-			}
+		// A header the site owner told us their own proxy sets.
+		if ( in_array( $trusted, self::TRUSTABLE, true ) && ! empty( $server[ $trusted ] ) ) {
+			return array(
+				'ip'      => self::nearest_client( (string) $server[ $trusted ], $cloudflare ),
+				'proxied' => false,
+			);
+		}
+
+		// Cloudflare's header, but its ranges are not downloaded yet.
+		if ( ! empty( $server['HTTP_CF_CONNECTING_IP'] ) && ! $cloudflare ) {
+			return array(
+				'ip'      => null,
+				'proxied' => true,
+			);
 		}
 
 		// A private address means a proxy we cannot see through.
@@ -253,6 +255,32 @@ final class AN10_Verifier {
 			'ip'      => $remote,
 			'proxied' => $proxied,
 		);
+	}
+
+	/**
+	 * The visitor's address from a forwarding header. Pure.
+	 *
+	 * A proxy adds the address it saw to the end of the list. Everything
+	 * before that came from the visitor, who can write any address there,
+	 * including a crawler's. So the list is read from the right, stepping over
+	 * proxies we know (private addresses and Cloudflare), and the first other
+	 * address is the visitor's.
+	 *
+	 * @param string   $header     The header's value, comma separated.
+	 * @param string[] $cloudflare Cloudflare's ranges, empty until downloaded.
+	 */
+	public static function nearest_client( string $header, array $cloudflare ): ?string {
+		foreach ( array_reverse( explode( ',', $header ) ) as $entry ) {
+			$ip = trim( $entry );
+			if ( ! filter_var( $ip, FILTER_VALIDATE_IP ) ) {
+				return null;
+			}
+			if ( ! AN10_Ip::is_public( $ip ) || ( $cloudflare && AN10_Ip::in_any( $ip, $cloudflare ) ) ) {
+				continue;
+			}
+			return $ip;
+		}
+		return null;
 	}
 
 	/**
