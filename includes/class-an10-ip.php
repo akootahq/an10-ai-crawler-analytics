@@ -80,6 +80,7 @@ final class AN10_Ip {
 	 * Every list in the registry uses the same shape, verified on 2026-11-12:
 	 * `{"creationTime": "...", "prefixes": [{"ipv4Prefix": "..."}, {"ipv6Prefix": "..."}]}`.
 	 * Cloudflare's API answers `{"result": {"ipv4_cidrs": [...], "ipv6_cidrs": [...]}}`.
+	 * RIPEstat's announced prefixes answer `{"data": {"prefixes": [{"prefix": "..."}]}}`.
 	 * Plain text, one range per line, is read too.
 	 *
 	 * @param string $body Response body.
@@ -91,6 +92,15 @@ final class AN10_Ip {
 		if ( is_array( $json ) && isset( $json['prefixes'] ) && is_array( $json['prefixes'] ) ) {
 			foreach ( $json['prefixes'] as $p ) {
 				$cidr = is_array( $p ) ? ( $p['ipv4Prefix'] ?? $p['ipv6Prefix'] ?? null ) : null;
+				if ( is_string( $cidr ) && self::is_cidr( $cidr ) ) {
+					$out[] = $cidr;
+				}
+			}
+			return $out;
+		}
+		if ( is_array( $json ) && isset( $json['data']['prefixes'] ) && is_array( $json['data']['prefixes'] ) ) {
+			foreach ( $json['data']['prefixes'] as $p ) {
+				$cidr = is_array( $p ) ? ( $p['prefix'] ?? null ) : null;
 				if ( is_string( $cidr ) && self::is_cidr( $cidr ) ) {
 					$out[] = $cidr;
 				}
@@ -113,6 +123,24 @@ final class AN10_Ip {
 			}
 		}
 		return $out;
+	}
+
+	/**
+	 * The addresses and ranges in text a person typed, one per line. A bare
+	 * address is kept as it is (it matches only itself); anything else that
+	 * is not an address or a range is dropped.
+	 *
+	 * @param string $text Lines.
+	 * @return string[]
+	 */
+	public static function ranges_from_text( string $text ): array {
+		$out = array();
+		foreach ( preg_split( '/[\s,]+/', trim( $text ) ) as $entry ) {
+			if ( '' !== $entry && ( self::is_cidr( $entry ) || false !== filter_var( $entry, FILTER_VALIDATE_IP ) ) ) {
+				$out[] = $entry;
+			}
+		}
+		return array_values( array_unique( $out ) );
 	}
 
 	/**

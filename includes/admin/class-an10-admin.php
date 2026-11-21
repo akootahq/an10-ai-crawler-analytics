@@ -701,6 +701,12 @@ final class AN10_Admin {
 		}
 		echo '</td></tr>';
 		printf(
+			'<tr><th scope="row"><label for="an10-proxy-ranges">%s</label></th><td><textarea id="an10-proxy-ranges" name="proxy_ranges" rows="3" cols="40" class="code">%s</textarea><p class="description">%s</p></td></tr>',
+			esc_html__( "Your proxy's addresses", 'an10-ai-crawler-analytics' ),
+			esc_textarea( implode( "\n", (array) $s['proxy_ranges'] ) ),
+			esc_html__( 'One address or range per line, such as 203.0.113.0/24. The header above is read only from these, from private addresses and from Cloudflare, because anyone can send it straight to your server. Leave empty if your proxy reaches WordPress over a private network.', 'an10-ai-crawler-analytics' )
+		);
+		printf(
 			'<tr><th scope="row">%s</th><td><label><input type="checkbox" name="delete_on_uninstall" value="1"%s> %s</label></td></tr>',
 			esc_html__( 'On uninstall', 'an10-ai-crawler-analytics' ),
 			checked( ! empty( $s['delete_on_uninstall'] ), true, false ),
@@ -886,6 +892,7 @@ final class AN10_Admin {
 			wp_die( esc_html__( 'Not allowed.', 'an10-ai-crawler-analytics' ) );
 		}
 		$header = isset( $_POST['proxy_header'] ) ? sanitize_text_field( wp_unslash( $_POST['proxy_header'] ) ) : '';
+		$ranges = isset( $_POST['proxy_ranges'] ) ? sanitize_textarea_field( wp_unslash( $_POST['proxy_ranges'] ) ) : '';
 		$verify = ! empty( $_POST['verify_crawlers'] );
 		$was    = AN10_Verifier::enabled();
 		update_option(
@@ -894,6 +901,7 @@ final class AN10_Admin {
 				'retention_days'      => max( 7, min( 730, isset( $_POST['retention_days'] ) ? absint( $_POST['retention_days'] ) : 90 ) ),
 				'weekly_email'        => ! empty( $_POST['weekly_email'] ),
 				'proxy_header'        => in_array( $header, array( 'HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'HTTP_TRUE_CLIENT_IP' ), true ) ? $header : '',
+				'proxy_ranges'        => AN10_Ip::ranges_from_text( $ranges ),
 				'delete_on_uninstall' => ! empty( $_POST['delete_on_uninstall'] ),
 				'verify_crawlers'     => $was,
 			)

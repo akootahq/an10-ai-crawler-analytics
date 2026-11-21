@@ -24,6 +24,18 @@
  * such a header too; that moves their visit from Spoofed to Unverified, and
  * neither is ever counted.
  *
+ * A header the site owner told us to trust is read only when the request
+ * came from their proxy: a private address, Cloudflare, or the addresses
+ * they gave in Settings. Anyone can send the header straight to the server,
+ * past the proxy, with a crawler's address in it; from any other address it
+ * is ignored.
+ *
+ * An operator's list can miss some of its own addresses. Anthropic's does:
+ * a real Claude-User fetch came from 160.79.104.0/23, which its own network
+ * (AS399358, Anthropic, PBC) announces but bots.json did not list on
+ * 2026-11-22. For such an operator the ranges its own network announces,
+ * read from RIPE NCC's public routing data, count as its list too.
+ *
  * Downloading the lists means contacting other sites, so it is off until the
  * site owner turns verification on. Until then no list is fetched and every
  * claimed crawler visit is Unverified. Once on, the lists are fetched by a
@@ -48,6 +60,15 @@ final class AN10_Verifier {
 	 * arrived through Cloudflare.
 	 */
 	const CLOUDFLARE = 'https://api.cloudflare.com/client/v4/ips';
+
+	/**
+	 * The networks an operator runs itself, by the list they complete: the
+	 * ranges each announces, from RIPEstat. An address only that operator's
+	 * network can send from is theirs, whatever their list says.
+	 */
+	const OPERATOR_NETWORKS = array(
+		'https://claude.com/crawling/bots.json' => 'https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS399358&sourceapp=an10-ai-crawler-analytics',
+	);
 
 	/**
 	 * After this long without a successful download, a list is too old to
@@ -86,6 +107,9 @@ final class AN10_Verifier {
 		foreach ( AN10_Registry::crawlers() as $c ) {
 			if ( null !== $c['ip_ranges'] ) {
 				$urls[] = $c['ip_ranges'];
+				if ( isset( self::OPERATOR_NETWORKS[ $c['ip_ranges'] ] ) ) {
+					$urls[] = self::OPERATOR_NETWORKS[ $c['ip_ranges'] ];
+				}
 			}
 		}
 		$urls[] = self::CLOUDFLARE;
@@ -183,7 +207,8 @@ final class AN10_Verifier {
 		return self::client_from(
 			$server,
 			(string) AN10_Plugin::setting( 'proxy_header' ),
-			self::lists()[ self::CLOUDFLARE ]['ranges'] ?? array()
+			self::lists()[ self::CLOUDFLARE ]['ranges'] ?? array(),
+			(array) AN10_Plugin::setting( 'proxy_ranges' )
 		);
 	}
 
@@ -196,9 +221,10 @@ final class AN10_Verifier {
 	 * @param array<string, string> $server     Request headers, $_SERVER style.
 	 * @param string                $trusted    The header the site owner said their proxy sets, or ''.
 	 * @param string[]              $cloudflare Cloudflare's ranges, empty until downloaded.
+	 * @param string[]              $proxies    The site owner's proxy addresses, from Settings.
 	 * @return array{ip: string|null, proxied: bool}
 	 */
-	public static function client_from( array $server, string $trusted, array $cloudflare ): array {
+	public static function client_from( array $server, string $trusted, array $cloudflare, array $proxies = array() ): array {
 		$remote = (string) ( $server['REMOTE_ADDR'] ?? '' );
 		if ( ! filter_var( $remote, FILTER_VALIDATE_IP ) ) {
 			return array(
@@ -219,10 +245,14 @@ final class AN10_Verifier {
 			);
 		}
 
-		// A header the site owner told us their own proxy sets.
-		if ( in_array( $trusted, self::TRUSTABLE, true ) && ! empty( $server[ $trusted ] ) ) {
+		// A header the site owner told us their own proxy sets, read only when
+		// the request came from that proxy. Sent from anywhere else, it was
+		// written by whoever sent the request, and is ignored below.
+		$known   = array_merge( $cloudflare, $proxies );
+		$byproxy = ! AN10_Ip::is_public( $remote ) || AN10_Ip::in_any( $remote, $known );
+		if ( $byproxy && in_array( $trusted, self::TRUSTABLE, true ) && ! empty( $server[ $trusted ] ) ) {
 			return array(
-				'ip'      => self::nearest_client( (string) $server[ $trusted ], $cloudflare ),
+				'ip'      => self::nearest_client( (string) $server[ $trusted ], $known ),
 				'proxied' => false,
 			);
 		}
@@ -263,19 +293,19 @@ final class AN10_Verifier {
 	 * A proxy adds the address it saw to the end of the list. Everything
 	 * before that came from the visitor, who can write any address there,
 	 * including a crawler's. So the list is read from the right, stepping over
-	 * proxies we know (private addresses and Cloudflare), and the first other
-	 * address is the visitor's.
+	 * proxies we know (private addresses, Cloudflare and the site owner's), and
+	 * the first other address is the visitor's.
 	 *
-	 * @param string   $header     The header's value, comma separated.
-	 * @param string[] $cloudflare Cloudflare's ranges, empty until downloaded.
+	 * @param string   $header  The header's value, comma separated.
+	 * @param string[] $proxies Known proxies' ranges: Cloudflare's and the site owner's.
 	 */
-	public static function nearest_client( string $header, array $cloudflare ): ?string {
+	public static function nearest_client( string $header, array $proxies ): ?string {
 		foreach ( array_reverse( explode( ',', $header ) ) as $entry ) {
 			$ip = trim( $entry );
 			if ( ! filter_var( $ip, FILTER_VALIDATE_IP ) ) {
 				return null;
 			}
-			if ( ! AN10_Ip::is_public( $ip ) || ( $cloudflare && AN10_Ip::in_any( $ip, $cloudflare ) ) ) {
+			if ( ! AN10_Ip::is_public( $ip ) || AN10_Ip::in_any( $ip, $proxies ) ) {
 				continue;
 			}
 			return $ip;
@@ -294,12 +324,37 @@ final class AN10_Verifier {
 		if ( null === $crawler['ip_ranges'] ) {
 			return AN10_Store::UNVERIFIED;
 		}
-		$list = self::lists()[ $crawler['ip_ranges'] ] ?? array();
-		return self::verdict(
-			$ip,
-			(array) ( $list['ranges'] ?? array() ),
-			$proxied,
-			(int) ( $list['fetched_at'] ?? 0 ) < time() - self::STALE_AFTER
+		$known = self::known_addresses( $crawler['ip_ranges'], self::lists(), time() );
+		return self::verdict( $ip, $known['ranges'], $proxied, $known['stale'] );
+	}
+
+	/**
+	 * An operator's addresses from every source held: the list it publishes
+	 * and, where it runs its own network, the ranges that network announces.
+	 * Pure.
+	 *
+	 * Stale when any source is: a miss accuses only when all are current.
+	 *
+	 * @param string                                       $url   The operator's published list.
+	 * @param array<string, array{ranges?: string[], fetched_at?: int}> $lists Stored lists, keyed by URL.
+	 * @param int                                          $now   Current time.
+	 * @return array{ranges: string[], stale: bool}
+	 */
+	public static function known_addresses( string $url, array $lists, int $now ): array {
+		$sources = array( $url );
+		if ( isset( self::OPERATOR_NETWORKS[ $url ] ) ) {
+			$sources[] = self::OPERATOR_NETWORKS[ $url ];
+		}
+		$ranges = array();
+		$stale  = false;
+		foreach ( $sources as $source ) {
+			$list   = $lists[ $source ] ?? array();
+			$ranges = array_merge( $ranges, (array) ( $list['ranges'] ?? array() ) );
+			$stale  = $stale || (int) ( $list['fetched_at'] ?? 0 ) < $now - self::STALE_AFTER;
+		}
+		return array(
+			'ranges' => $ranges,
+			'stale'  => $stale,
 		);
 	}
 

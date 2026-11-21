@@ -136,8 +136,117 @@ final class VerifierTest extends TestCase {
 		);
 		$this->assertSame( AN10_Store::SPOOFED, AN10_Verifier::verdict( $client['ip'], self::GPTBOT, $client['proxied'], false ) );
 
-		// Before Cloudflare's ranges are downloaded, the chosen header still gives the real address.
-		$this->assertSame( '8.8.8.8', AN10_Verifier::client_from( $server, 'HTTP_X_FORWARDED_FOR', array() )['ip'] );
+		// Before Cloudflare's ranges are downloaded, nothing says the request
+		// came from Cloudflare, so neither header is read.
+		$this->assertNull( AN10_Verifier::client_from( $server, 'HTTP_X_FORWARDED_FOR', array() )['ip'] );
+	}
+
+	/**
+	 * The owner trusts X-Forwarded-For, and someone sends it straight to the
+	 * server, past the proxy, with an OpenAI address in it.
+	 */
+	public function test_the_chosen_header_sent_straight_to_the_server_is_ignored(): void {
+		$client = AN10_Verifier::client_from(
+			array(
+				'REMOTE_ADDR'          => '8.8.8.8',
+				'HTTP_X_FORWARDED_FOR' => '20.171.206.7',
+			),
+			'HTTP_X_FORWARDED_FOR',
+			self::CLOUDFLARE
+		);
+		$this->assertSame(
+			array(
+				'ip'      => '8.8.8.8',
+				'proxied' => true,
+			),
+			$client
+		);
+		$this->assertSame( AN10_Store::UNVERIFIED, AN10_Verifier::verdict( $client['ip'], self::GPTBOT, $client['proxied'], false ) );
+	}
+
+	public function test_the_chosen_header_is_read_from_the_owners_public_proxy(): void {
+		$proxy  = array( '203.0.113.0/24' );
+		$client = AN10_Verifier::client_from(
+			array(
+				'REMOTE_ADDR'          => '203.0.113.5',
+				'HTTP_X_FORWARDED_FOR' => '20.171.206.7, 203.0.113.9',
+			),
+			'HTTP_X_FORWARDED_FOR',
+			self::CLOUDFLARE,
+			$proxy
+		);
+		$this->assertSame( '20.171.206.7', $client['ip'] );
+		$this->assertSame( AN10_Store::VERIFIED, AN10_Verifier::verdict( $client['ip'], self::GPTBOT, $client['proxied'], false ) );
+
+		// The same proxy without its addresses in Settings: unknown, never verified.
+		$unlisted = AN10_Verifier::client_from(
+			array(
+				'REMOTE_ADDR'          => '203.0.113.5',
+				'HTTP_X_FORWARDED_FOR' => '20.171.206.7',
+			),
+			'HTTP_X_FORWARDED_FOR',
+			self::CLOUDFLARE
+		);
+		$this->assertSame( AN10_Store::UNVERIFIED, AN10_Verifier::verdict( $unlisted['ip'], self::GPTBOT, $unlisted['proxied'], false ) );
+	}
+
+	/**
+	 * A real Claude-User fetch a tester saw came from 160.79.104.0/23, which
+	 * Anthropic's own network announces and bots.json did not list.
+	 */
+	public function test_anthropics_own_network_counts_as_its_list(): void {
+		$bots    = 'https://claude.com/crawling/bots.json';
+		$network = AN10_Verifier::OPERATOR_NETWORKS[ $bots ];
+		$now     = 1795300000;
+		$lists   = array(
+			$bots    => array(
+				'ranges'     => array( '216.73.216.0/22' ),
+				'fetched_at' => $now - 3600,
+			),
+			$network => array(
+				'ranges'     => array( '160.79.104.0/23', '2607:6bc0::/48' ),
+				'fetched_at' => $now - 3600,
+			),
+		);
+		$known = AN10_Verifier::known_addresses( $bots, $lists, $now );
+		$this->assertFalse( $known['stale'] );
+		$this->assertSame( AN10_Store::VERIFIED, AN10_Verifier::verdict( '160.79.104.20', $known['ranges'], false, $known['stale'] ) );
+		$this->assertSame( AN10_Store::VERIFIED, AN10_Verifier::verdict( '216.73.216.9', $known['ranges'], false, $known['stale'] ) );
+		$this->assertSame( AN10_Store::SPOOFED, AN10_Verifier::verdict( '8.8.8.8', $known['ranges'], false, $known['stale'] ) );
+
+		// Until the network's ranges are in, a miss is only Unverified.
+		unset( $lists[ $network ] );
+		$partial = AN10_Verifier::known_addresses( $bots, $lists, $now );
+		$this->assertTrue( $partial['stale'] );
+		$this->assertSame( AN10_Store::UNVERIFIED, AN10_Verifier::verdict( '160.79.104.20', $partial['ranges'], false, $partial['stale'] ) );
+	}
+
+	public function test_an_operator_without_its_own_network_uses_its_list_alone(): void {
+		$url   = 'https://openai.com/gptbot.json';
+		$known = AN10_Verifier::known_addresses(
+			$url,
+			array(
+				$url => array(
+					'ranges'     => self::GPTBOT,
+					'fetched_at' => 1795300000,
+				),
+			),
+			1795300000
+		);
+		$this->assertSame(
+			array(
+				'ranges' => self::GPTBOT,
+				'stale'  => false,
+			),
+			$known
+		);
+	}
+
+	public function test_every_operator_network_completes_a_list_the_plugin_downloads(): void {
+		foreach ( AN10_Verifier::OPERATOR_NETWORKS as $list => $network ) {
+			$this->assertContains( $list, AN10_Verifier::list_urls() );
+			$this->assertContains( $network, AN10_Verifier::list_urls() );
+		}
 	}
 
 	public function test_a_real_crawler_behind_cloudflare_and_the_chosen_header_is_verified(): void {

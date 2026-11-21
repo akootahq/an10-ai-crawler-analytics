@@ -35,6 +35,19 @@ final class IpTest extends TestCase {
 		$this->assertSame( array( '173.245.48.0/20', '2400:cb00::/32' ), AN10_Ip::parse_list( $json ) );
 	}
 
+	public function test_parses_ripestat_announced_prefixes(): void {
+		$json = '{"data":{"prefixes":[{"prefix":"160.79.104.0/23","timelines":[]},{"prefix":"2607:6bc0::/48"},{"prefix":"junk"}],"resource":"399358"},"status":"ok"}';
+		$this->assertSame( array( '160.79.104.0/23', '2607:6bc0::/48' ), AN10_Ip::parse_list( $json ) );
+	}
+
+	public function test_ranges_typed_by_a_person(): void {
+		$this->assertSame(
+			array( '203.0.113.0/24', '198.51.100.7', '2001:db8::/32' ),
+			AN10_Ip::ranges_from_text( " 203.0.113.0/24\n198.51.100.7, 2001:db8::/32\nproxy.example.com\n203.0.113.0/24\n10.0.0.1/40\n" )
+		);
+		$this->assertSame( array(), AN10_Ip::ranges_from_text( '' ) );
+	}
+
 	public function test_public_addresses(): void {
 		$this->assertTrue( AN10_Ip::is_public( '20.171.206.7' ) );
 		$this->assertFalse( AN10_Ip::is_public( '10.0.0.4' ) );

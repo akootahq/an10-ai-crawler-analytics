@@ -29,6 +29,7 @@ final class AN10_Plugin {
 		'retention_days'      => 90,
 		'weekly_email'        => false,
 		'proxy_header'        => '',
+		'proxy_ranges'        => array(),
 		'delete_on_uninstall' => false,
 		'verify_crawlers'     => false,
 	);
