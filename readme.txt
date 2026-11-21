@@ -4,7 +4,7 @@ Tags: ai crawler, robots.txt, chatgpt, analytics, aeo
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 0.1.0
+Stable tag: 0.1.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -70,7 +70,7 @@ It only counts a visit after checking the address against the operator's list, s
 
 = My site is behind Cloudflare. Does verification work? =
 
-Yes. With verification on, Cloudflare is detected from its published ranges. For any other proxy, choose the header it sets in Settings; until then its visits are labelled Unverified, never Spoofed.
+Yes. With verification on, Cloudflare is detected from its published ranges, so leave "Your proxy sets" in Settings on None. For any other proxy, choose the header it sets; until then its visits are labelled Unverified, never Spoofed.
 
 Cloudflare can also block AI crawlers, or add its own rules to robots.txt, before a request reaches WordPress. The plugin cannot see that, and says so on sites behind Cloudflare.
 
@@ -98,6 +98,10 @@ The admin screens use the Inter and JetBrains Mono typefaces, bundled under the 
 4. Fix it on the spot — a heading proposal to review. Only the heading levels change, and nothing is applied without you.
 
 == Changelog ==
+
+= 0.1.1 =
+* Fix: with a proxy header chosen in Settings, a fake crawler could write a crawler's address into X-Forwarded-For and be counted as verified. The header is now read from the right, so only the address your proxy added counts.
+* Fix: on sites behind Cloudflare, Cloudflare's own header is used even when another header is chosen in Settings, and Settings says to leave it on None.
 
 = 0.1.0 =
 * First release.

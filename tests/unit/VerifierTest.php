@@ -98,4 +98,65 @@ final class VerifierTest extends TestCase {
 	public function test_a_private_address_cannot_be_seen_through(): void {
 		$this->assertNull( AN10_Verifier::client_from( array( 'REMOTE_ADDR' => '172.18.0.1' ), '', self::CLOUDFLARE )['ip'] );
 	}
+
+	/**
+	 * A fake GPTBot writes an OpenAI address into X-Forwarded-For; its proxy
+	 * then adds the real address after it.
+	 */
+	public function test_an_address_written_by_the_visitor_never_passes_through_the_chosen_header(): void {
+		$client = AN10_Verifier::client_from(
+			array(
+				'REMOTE_ADDR'          => '10.0.0.2',
+				'HTTP_X_FORWARDED_FOR' => '20.171.206.7, 8.8.8.8',
+			),
+			'HTTP_X_FORWARDED_FOR',
+			self::CLOUDFLARE
+		);
+		$this->assertSame( '8.8.8.8', $client['ip'] );
+		$this->assertSame( AN10_Store::SPOOFED, AN10_Verifier::verdict( $client['ip'], self::GPTBOT, $client['proxied'], false ) );
+	}
+
+	/**
+	 * Behind Cloudflare with X-Forwarded-For chosen in Settings, the case a
+	 * tester reported.
+	 */
+	public function test_cloudflare_is_read_before_the_chosen_header(): void {
+		$server = array(
+			'REMOTE_ADDR'           => '173.245.48.9',
+			'HTTP_CF_CONNECTING_IP' => '8.8.8.8',
+			'HTTP_X_FORWARDED_FOR'  => '20.171.206.7, 8.8.8.8',
+		);
+		$client = AN10_Verifier::client_from( $server, 'HTTP_X_FORWARDED_FOR', self::CLOUDFLARE );
+		$this->assertSame(
+			array(
+				'ip'      => '8.8.8.8',
+				'proxied' => false,
+			),
+			$client
+		);
+		$this->assertSame( AN10_Store::SPOOFED, AN10_Verifier::verdict( $client['ip'], self::GPTBOT, $client['proxied'], false ) );
+
+		// Before Cloudflare's ranges are downloaded, the chosen header still gives the real address.
+		$this->assertSame( '8.8.8.8', AN10_Verifier::client_from( $server, 'HTTP_X_FORWARDED_FOR', array() )['ip'] );
+	}
+
+	public function test_a_real_crawler_behind_cloudflare_and_the_chosen_header_is_verified(): void {
+		$client = AN10_Verifier::client_from(
+			array(
+				'REMOTE_ADDR'           => '173.245.48.9',
+				'HTTP_CF_CONNECTING_IP' => '20.171.206.7',
+				'HTTP_X_FORWARDED_FOR'  => '20.171.206.7',
+			),
+			'HTTP_X_FORWARDED_FOR',
+			self::CLOUDFLARE
+		);
+		$this->assertSame( AN10_Store::VERIFIED, AN10_Verifier::verdict( $client['ip'], self::GPTBOT, $client['proxied'], false ) );
+	}
+
+	public function test_the_nearest_client_steps_over_known_proxies_only(): void {
+		$this->assertSame( '8.8.8.8', AN10_Verifier::nearest_client( '20.171.206.7, 8.8.8.8, 173.245.48.9, 10.0.0.2', self::CLOUDFLARE ) );
+		$this->assertSame( '20.171.206.7', AN10_Verifier::nearest_client( ' 20.171.206.7 ', self::CLOUDFLARE ) );
+		$this->assertNull( AN10_Verifier::nearest_client( '20.171.206.7, unknown', self::CLOUDFLARE ) );
+		$this->assertNull( AN10_Verifier::nearest_client( '10.0.0.3, 10.0.0.2', self::CLOUDFLARE ) );
+	}
 }

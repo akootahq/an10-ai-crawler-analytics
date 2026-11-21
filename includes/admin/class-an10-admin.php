@@ -695,7 +695,11 @@ final class AN10_Admin {
 		foreach ( $headers as $value => $label ) {
 			printf( '<option value="%s"%s>%s</option>', esc_attr( $value ), selected( $s['proxy_header'], $value, false ), esc_html( $label ) );
 		}
-		echo '</select><p class="description">' . esc_html__( 'Only choose a header if your own load balancer or proxy sets it. A header anyone can send would let a fake crawler pass verification.', 'an10-ai-crawler-analytics' ) . '</p></td></tr>';
+		echo '</select><p class="description">' . esc_html__( 'Only choose a header if your own load balancer or proxy sets it. A header anyone can send would let a fake crawler pass verification.', 'an10-ai-crawler-analytics' ) . '</p>';
+		if ( AN10_Site::behind_cloudflare() ) {
+			echo '<p class="description">' . esc_html__( 'Your site is behind Cloudflare. Cloudflare is read automatically, so leave this on None unless another proxy of your own sits behind Cloudflare.', 'an10-ai-crawler-analytics' ) . '</p>';
+		}
+		echo '</td></tr>';
 		printf(
 			'<tr><th scope="row">%s</th><td><label><input type="checkbox" name="delete_on_uninstall" value="1"%s> %s</label></td></tr>',
 			esc_html__( 'On uninstall', 'an10-ai-crawler-analytics' ),
