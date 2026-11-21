@@ -4,7 +4,7 @@ Tags: ai crawler, robots.txt, chatgpt, analytics, aeo
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 0.1.1
+Stable tag: 0.1.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -54,6 +54,7 @@ The admin screens load their fonts and images from the plugin's own folder. Noth
 
 * OpenAI: https://openai.com/gptbot.json, https://openai.com/searchbot.json, https://openai.com/chatgpt-user.json ([terms](https://openai.com/policies/terms-of-use), [privacy](https://openai.com/policies/privacy-policy))
 * Anthropic: https://claude.com/crawling/bots.json ([privacy](https://www.anthropic.com/legal/privacy))
+* RIPE NCC (RIPEstat): https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS399358&sourceapp=an10-ai-crawler-analytics, the address ranges Anthropic's own network announces, because Anthropic's list does not include all of them ([terms](https://www.ripe.net/about-us/legal/ripestat-service-terms-and-conditions/), [privacy](https://www.ripe.net/about-us/legal/ripe-ncc-privacy-statement/))
 * Perplexity: https://www.perplexity.ai/perplexitybot.json, https://www.perplexity.ai/perplexity-user.json ([privacy](https://www.perplexity.ai/hub/legal/privacy-policy))
 * Google: https://developers.google.com/static/crawling/ipranges/common-crawlers.json ([privacy](https://policies.google.com/privacy))
 * Microsoft: https://www.bing.com/toolbox/bingbot.json ([privacy](https://privacy.microsoft.com/privacystatement))
@@ -70,7 +71,7 @@ It only counts a visit after checking the address against the operator's list, s
 
 = My site is behind Cloudflare. Does verification work? =
 
-Yes. With verification on, Cloudflare is detected from its published ranges, so leave "Your proxy sets" in Settings on None. For any other proxy, choose the header it sets; until then its visits are labelled Unverified, never Spoofed.
+Yes. With verification on, Cloudflare is detected from its published ranges, so leave "Your proxy sets" in Settings on None. For any other proxy, choose the header it sets, and if the proxy reaches your server from a public address, list its addresses under "Your proxy's addresses". The header is read only from those addresses, private ones and Cloudflare, because anyone can send it straight to your server. Until then its visits are labelled Unverified, never Spoofed.
 
 Cloudflare can also block AI crawlers, or add its own rules to robots.txt, before a request reaches WordPress. The plugin cannot see that, and says so on sites behind Cloudflare.
 
@@ -98,6 +99,10 @@ The admin screens use the Inter and JetBrains Mono typefaces, bundled under the 
 4. Fix it on the spot — a heading proposal to review. Only the heading levels change, and nothing is applied without you.
 
 == Changelog ==
+
+= 0.1.2 =
+* Fix: a real Claude visit could be labelled Spoofed. Anthropic's published list leaves out some of its own addresses, so the ranges Anthropic's own network announces now count too, read daily from RIPE NCC's public routing data while verification is on.
+* Fix: with a proxy header chosen in Settings, a request sent straight to your server, past the proxy, could carry a crawler's address in that header and be counted as verified. The header is now read only from your proxy: private addresses, Cloudflare, or the addresses you list in the new "Your proxy's addresses" setting.
 
 = 0.1.1 =
 * Fix: with a proxy header chosen in Settings, a fake crawler could write a crawler's address into X-Forwarded-For and be counted as verified. The header is now read from the right, so only the address your proxy added counts.
