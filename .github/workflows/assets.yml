@@ -1,0 +1,32 @@
+name: Listing assets
+
+# Push the artwork in .wordpress-org/ (screenshots, banners, icons) to the
+# WordPress.org SVN assets folder. Run by hand (workflow_dispatch). Assets only:
+# trunk/ and tags/ are never touched, there is no version bump and no release,
+# so it is safe to run any time the listing images change. The credentials live
+# in the wordpress-org environment, the same ones the release uses.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: assets
+  cancel-in-progress: false
+
+jobs:
+  assets:
+    name: Update WordPress.org listing assets
+    runs-on: ubuntu-latest
+    environment: wordpress-org
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq subversion
+      - name: Push assets to WordPress.org
+        env:
+          SVN_USERNAME: ${{ vars.SVN_USERNAME }}
+          SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
+        run: bash bin/deploy-assets.sh
