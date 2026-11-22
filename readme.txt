@@ -4,7 +4,7 @@ Tags: ai crawler, robots.txt, chatgpt, analytics, aeo
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 0.1.2
+Stable tag: 0.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -99,6 +99,11 @@ The admin screens use the Inter and JetBrains Mono typefaces, bundled under the 
 4. Fix it on the spot — a heading proposal to review. Only the heading levels change, and nothing is applied without you.
 
 == Changelog ==
+
+= 0.2.0 =
+* New: the Overview now leads with the number of spoofed crawler visits, the ones using a real crawler's name from an address its operator does not publish, so the one figure only this plugin can show is the first thing you see.
+* New: export every recorded crawler visit as a CSV, straight from your own database, for your records or your own analysis. Nothing leaves your server.
+* Improvement: a new install now shows what to expect before any crawler has arrived, with a clear control to turn verification on, instead of an empty screen.
 
 = 0.1.2 =
 * Fix: a real Claude visit could be labelled Spoofed. Anthropic's published list leaves out some of its own addresses, so the ranges Anthropic's own network announces now count too, read daily from RIPE NCC's public routing data while verification is on.

@@ -310,4 +310,87 @@ final class AN10_Store {
 	public static function utc( int $ts ): string {
 		return gmdate( 'Y-m-d H:i:s', $ts );
 	}
+
+	/**
+	 * Is there any stored event at all?
+	 */
+	public static function has_rows(): bool {
+		global $wpdb;
+		return (bool) $wpdb->get_var( 'SELECT 1 FROM ' . self::table() . ' LIMIT 1' ); // phpcs:ignore WordPress.DB
+	}
+
+	/**
+	 * Stored events for CSV export, newest first. Local only, bounded.
+	 *
+	 * @param int $limit Maximum rows.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public static function export_rows( int $limit = 50000 ): array {
+		global $wpdb;
+		$limit = max( 1, min( 200000, $limit ) );
+		return (array) $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$wpdb->prepare(
+				'SELECT created_at, kind, agent, verification, post_id, path, status FROM %i ORDER BY created_at DESC, id DESC LIMIT %d',
+				self::table(),
+				$limit
+			),
+			ARRAY_A
+		);
+	}
+
+	/**
+	 * Human label for a kind. Pure.
+	 *
+	 * @param int $kind KIND_* constant.
+	 */
+	public static function kind_label( int $kind ): string {
+		return self::KIND_REFERRAL === $kind ? 'referral' : 'crawler';
+	}
+
+	/**
+	 * Human label for a verification state. Pure. Empty for not-applicable
+	 * (a referral is never verified against an IP list).
+	 *
+	 * @param int $state VERIFIED / SPOOFED / UNVERIFIED / NOT_APPLICABLE.
+	 */
+	public static function verification_label( int $state ): string {
+		switch ( $state ) {
+			case self::VERIFIED:
+				return 'verified';
+			case self::SPOOFED:
+				return 'spoofed';
+			case self::UNVERIFIED:
+				return 'unverified';
+			default:
+				return '';
+		}
+	}
+
+	/**
+	 * Shape one stored event row into CSV cells, in the export's column order:
+	 * time, crawler, kind, status, path, http_status. Pure: no database, so it
+	 * is unit-testable and the export handler only has to stream it.
+	 *
+	 * @param array<string, mixed> $row A row from export_rows().
+	 * @return array<int, string>
+	 */
+	public static function csv_row( array $row ): array {
+		return array(
+			(string) ( $row['created_at'] ?? '' ),
+			(string) ( $row['agent'] ?? '' ),
+			self::kind_label( (int) ( $row['kind'] ?? 0 ) ),
+			self::verification_label( (int) ( $row['verification'] ?? 0 ) ),
+			(string) ( $row['path'] ?? '' ),
+			(string) (int) ( $row['status'] ?? 0 ),
+		);
+	}
+
+	/**
+	 * The export CSV header row, matching csv_row().
+	 *
+	 * @return array<int, string>
+	 */
+	public static function csv_header(): array {
+		return array( 'time', 'crawler', 'kind', 'status', 'path', 'http_status' );
+	}
 }
