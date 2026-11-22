@@ -16,7 +16,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'AN10_VERSION', '0.1.2' );
+define( 'AN10_VERSION', '0.2.0' );
 // The plugin slug. It must equal this file's name, the folder name and the
 // text domain; changing it is a search and replace across the plugin.
 define( 'AN10_SLUG', 'an10-ai-crawler-analytics' );
