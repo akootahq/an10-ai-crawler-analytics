@@ -227,6 +227,16 @@ final class AN10_Admin {
 			self::render_verification_offer();
 		}
 
+		// The one thing only this plugin does: catching spoofed crawlers. The
+		// verification split, spoofed as the headline. Verified is the AI-only
+		// figure ($fetches, search engines excluded) so it reconciles with the
+		// "Verified AI crawler fetches" number below.
+		self::hero(
+			(int) $fetches,
+			(int) array_sum( array_column( $summary, 'spoofed' ) ),
+			(int) array_sum( array_column( $summary, 'unverified' ) )
+		);
+
 		// Three numbers first.
 		echo '<div class="an10-kpis">';
 		self::kpi(
@@ -473,6 +483,40 @@ final class AN10_Admin {
 			esc_html( $label ),
 			esc_html( number_format_i18n( $value ) ),
 			wp_kses( $sub, array( 'span' => array( 'class' => true ) ) )
+		);
+	}
+
+	/**
+	 * The hero: the verification split of crawler hits over the last 30 days,
+	 * with the spoofed count as the headline. It is the one thing no other
+	 * plugin does, so it leads the screen. Reads the summary already queried.
+	 *
+	 * @param int $verified   Verified crawler hits.
+	 * @param int $spoofed    Spoofed crawler hits.
+	 * @param int $unverified Hits that could not be checked.
+	 */
+	private static function hero( int $verified, int $spoofed, int $unverified ): void {
+		$zero = 0 === $spoofed;
+		$sub  = $zero
+			? __( '0 spoofed so far. We check each crawler hit against the IP list its operator publishes.', 'an10-ai-crawler-analytics' )
+			: __( 'Caught using a real crawler\'s name from an address its operator does not publish.', 'an10-ai-crawler-analytics' );
+		printf(
+			'<section class="an10-card an10-hero"><span class="an10-hero__eyebrow">%s</span>' .
+			'<div class="an10-hero__main"><span class="an10-hero__label">%s</span>' .
+			'<span class="%s">%s</span><span class="an10-hero__sub">%s</span></div>' .
+			'<div class="an10-hero__side">' .
+			'<div class="an10-kpi"><span class="an10-kpi__label">%s</span><span class="an10-kpi__value">%s</span></div>' .
+			'<div class="an10-kpi"><span class="an10-kpi__label">%s</span><span class="an10-kpi__value">%s</span></div>' .
+			'</div></section>',
+			esc_html__( 'Crawler identity checks, last 30 days', 'an10-ai-crawler-analytics' ),
+			esc_html__( 'Spoofed crawler visits', 'an10-ai-crawler-analytics' ),
+			esc_attr( $zero ? 'an10-hero__num an10-hero__num--zero' : 'an10-hero__num' ),
+			esc_html( number_format_i18n( $spoofed ) ),
+			esc_html( $sub ),
+			esc_html__( 'Verified', 'an10-ai-crawler-analytics' ),
+			esc_html( number_format_i18n( $verified ) ),
+			esc_html__( 'Unverified', 'an10-ai-crawler-analytics' ),
+			esc_html( number_format_i18n( $unverified ) )
 		);
 	}
 

@@ -282,6 +282,59 @@ body.toplevel_page_an10-ai-crawler-analytics #wpwrap {
 	margin: 16px 0 0;
 }
 
+/* Hero: the spoofed count leads the screen. */
+.an10 .an10-hero {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: 20px 56px;
+	margin: 0 0 16px;
+}
+
+.an10 .an10-hero__eyebrow {
+	flex-basis: 100%;
+	color: var(--an10-muted-foreground);
+	font-size: 13px;
+	font-weight: var(--an10-weight-ui);
+}
+
+.an10 .an10-hero__main {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.an10 .an10-hero__label {
+	color: var(--an10-muted-foreground);
+	font-size: 13px;
+	font-weight: var(--an10-weight-ui);
+}
+
+.an10 .an10-hero__num {
+	color: var(--an10-destructive);
+	font-size: 56px;
+	font-variant-numeric: tabular-nums;
+	font-weight: var(--an10-weight-head);
+	letter-spacing: -0.03em;
+	line-height: 1.02;
+}
+
+.an10 .an10-hero__num--zero {
+	color: var(--an10-foreground);
+}
+
+.an10 .an10-hero__sub {
+	max-width: 46ch;
+	color: var(--an10-foreground-dim);
+	font-size: 13px;
+}
+
+.an10 .an10-hero__side {
+	display: flex;
+	gap: 40px;
+	padding-bottom: 6px;
+}
+
 /* Figures: three numbers first. */
 .an10 .an10-kpis {
 	display: grid;
