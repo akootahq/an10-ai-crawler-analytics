@@ -22,6 +22,20 @@ final class AN10_Content {
 
 	const HEADING_RE = '#<h([1-6])\b([^>]*)>(.*?)</h\1\s*>#is';
 
+	/**
+	 * A block comment delimiter, as WordPress's own block parser reads it.
+	 */
+	const BLOCK_RE = '/<!--\s+(?P<closer>\/)?wp:(?P<namespace>[a-z][a-z0-9_-]*\/)?(?P<name>[a-z][a-z0-9_-]*)\s+(?P<attrs>{(?:(?:[^}]+|}+(?=})|(?!}\s+\/?-->).)*+)?}\s+)?(?P<void>\/)?-->/s';
+
+	/**
+	 * Where this plugin may change a heading's level: a core heading block,
+	 * which it updates tag and block together, or a core HTML block. Classic
+	 * content (outside any block) is editable too. A heading inside any other
+	 * block belongs to that block, which stores its own level: changing only
+	 * the tag would make the editor report the block as invalid.
+	 */
+	const EDITABLE_BLOCKS = array( 'core/heading', 'core/html' );
+
 	const QUESTION_START = '/^(who|what|when|where|why|how|which|can|could|does|do|did|is|are|was|were|should|will|would)\b/i';
 
 	/**
@@ -119,6 +133,44 @@ final class AN10_Content {
 	}
 
 	/**
+	 * The first skipped level on a page, ready to put in words: which heading,
+	 * its level, the level before it (1 is the title) and the levels skipped.
+	 *
+	 * @param array $headings Headings, each with level and text.
+	 * @param array $skips    From skips().
+	 * @return array{text: string, from: int, to: int, skipped: string, count: int}|null
+	 */
+	public static function first_skip( array $headings, array $skips ): ?array {
+		$skip = $skips[0] ?? null;
+		if ( ! is_array( $skip ) ) {
+			return null;
+		}
+		$text = (string) ( $headings[ (int) $skip['index'] ]['text'] ?? '' );
+		if ( '' === $text ) {
+			return null;
+		}
+		$first = (int) $skip['from'] + 1;
+		$last  = (int) $skip['to'] - 1;
+		return array(
+			'text'    => $text,
+			'from'    => (int) $skip['from'],
+			'to'      => (int) $skip['to'],
+			'skipped' => self::level_range( $first, $last ),
+			'count'   => $last - $first + 1,
+		);
+	}
+
+	/**
+	 * Heading levels as words: "h2", or "h2 to h4".
+	 *
+	 * @param int $first First level.
+	 * @param int $last  Last level.
+	 */
+	public static function level_range( int $first, int $last ): string {
+		return $first === $last ? 'h' . $first : 'h' . $first . ' to h' . $last;
+	}
+
+	/**
 	 * The heading levels we would propose: no skipped levels, and no h1 in the
 	 * content because the title already is the h1. Relative nesting is kept.
 	 *
@@ -151,20 +203,109 @@ final class AN10_Content {
 	}
 
 	/**
+	 * The block each heading sits in, the innermost one: "core/heading",
+	 * "kadence/advancedheading" and so on, or null for classic content
+	 * outside any block.
+	 *
+	 * @param string $content Stored post content.
+	 * @return array<int, string|null> One entry per heading, in document order.
+	 */
+	public static function heading_blocks( string $content ): array {
+		$events = array();
+		if ( preg_match_all( self::BLOCK_RE, $content, $m, PREG_SET_ORDER | PREG_OFFSET_CAPTURE ) ) {
+			foreach ( $m as $d ) {
+				if ( isset( $d['void'] ) && '/' === $d['void'][0] ) {
+					continue;
+				}
+				$namespace = isset( $d['namespace'] ) && '' !== $d['namespace'][0] ? $d['namespace'][0] : 'core/';
+				$events[]  = array( (int) $d[0][1], '/' === $d['closer'][0] ? 'close' : 'open', $namespace . $d['name'][0] );
+			}
+		}
+		foreach ( self::headings( $content ) as $i => $h ) {
+			$events[] = array( $h['offset'], 'heading', $i );
+		}
+		usort(
+			$events,
+			static function ( array $a, array $b ): int {
+				return $a[0] <=> $b[0];
+			}
+		);
+
+		$out   = array();
+		$stack = array();
+		foreach ( $events as $e ) {
+			if ( 'open' === $e[1] ) {
+				$stack[] = $e[2];
+			} elseif ( 'close' === $e[1] ) {
+				// Close up to the matching opener; a stray closer closes nothing.
+				$at = array_search( $e[2], array_reverse( $stack, true ), true );
+				if ( false !== $at ) {
+					$stack = array_slice( $stack, 0, (int) $at );
+				}
+			} else {
+				$out[ $e[2] ] = $stack ? end( $stack ) : null;
+			}
+		}
+		ksort( $out );
+		return array_values( $out );
+	}
+
+	/**
+	 * May this plugin change a heading in this block?
+	 *
+	 * @param string|null $block Block name, null for classic content.
+	 */
+	public static function is_editable( ?string $block ): bool {
+		return null === $block || in_array( $block, self::EDITABLE_BLOCKS, true );
+	}
+
+	/**
+	 * The headings a change would touch that sit in another plugin's block,
+	 * so a person has to change them in the editor.
+	 *
+	 * @param string $content Stored post content.
+	 * @param int[]  $levels  Proposed level for each heading, in document order.
+	 * @return array<int, array{index: int, text: string, block: string, from: int, to: int}>
+	 */
+	public static function manual_changes( string $content, array $levels ): array {
+		$levels   = array_values( $levels );
+		$headings = self::headings( $content );
+		$blocks   = self::heading_blocks( $content );
+		$out      = array();
+		foreach ( $headings as $i => $h ) {
+			$to = (int) ( $levels[ $i ] ?? $h['level'] );
+			if ( $to !== $h['level'] && ! self::is_editable( $blocks[ $i ] ?? null ) ) {
+				$out[] = array(
+					'index' => $i,
+					'text'  => $h['text'],
+					'block' => (string) $blocks[ $i ],
+					'from'  => $h['level'],
+					'to'    => $to,
+				);
+			}
+		}
+		return $out;
+	}
+
+	/**
 	 * Rewrite heading levels in stored content, keeping everything else.
 	 *
 	 * Handles classic HTML and block markup: a core/heading block stores its
 	 * level in the block comment as well as the tag, and both must change or
 	 * the editor reports the block as invalid.
 	 *
+	 * All or nothing: if any heading that would change sits in another
+	 * plugin's block, nothing is rewritten (see EDITABLE_BLOCKS).
+	 *
 	 * @param string $content Stored post content.
 	 * @param int[]  $levels  New level for each heading, in document order.
-	 * @return string|null New content, or null when the heading count no longer matches.
+	 * @return string|null New content, or null when the heading count no longer
+	 *                     matches or a heading to change is not ours to edit.
 	 */
 	public static function rewrite_headings( string $content, array $levels ): ?string {
 		$levels = array_values( $levels );
 		preg_match_all( self::HEADING_RE, $content, $m, PREG_SET_ORDER | PREG_OFFSET_CAPTURE );
-		if ( count( $m ) !== count( $levels ) ) {
+		if ( count( $m ) !== count( $levels ) || self::manual_changes( $content, $levels ) ) {
 			return null;
 		}
 

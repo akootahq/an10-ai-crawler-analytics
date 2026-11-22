@@ -4,7 +4,7 @@ Tags: ai crawler, robots.txt, chatgpt, analytics, aeo
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 0.2.1
+Stable tag: 0.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -101,6 +101,11 @@ The admin screens use the Inter and JetBrains Mono typefaces, bundled under the 
 4. Fix it on the spot — a heading proposal to review. Only the heading levels change, and nothing is applied without you.
 
 == Changelog ==
+
+= 0.3.0 =
+* The daily chart now splits each day by crawler operator (OpenAI, Anthropic, Perplexity and other AI crawlers), with a legend and each day's breakdown on hover.
+* The crawler identity check shows the verified, unverified and spoofed split as a bar, and findings carry a Passed, Finding or Problem label.
+* The skipped heading finding now names the heading. The proposed heading edit no longer offers to change headings set in blocks from other plugins (such as Kadence); it tells you to change those in the editor. Thanks to a tester for the report.
 
 = 0.2.1 =
 * Listing: added a short demo video to the plugin page and refreshed the screenshots. No code changes.

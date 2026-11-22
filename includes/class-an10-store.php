@@ -282,6 +282,40 @@ final class AN10_Store {
 	}
 
 	/**
+	 * Verified crawler fetches per local day and crawler, oldest first, with
+	 * every day present.
+	 *
+	 * @param int      $days    How many days, today included.
+	 * @param string[] $exclude Crawler tokens to leave out.
+	 * @return array<string, array<string, int>> Y-m-d to crawler token to fetches.
+	 */
+	public static function daily_verified_by_agent( int $days, array $exclude = array() ): array {
+		global $wpdb;
+		$tz      = wp_timezone();
+		$today   = new DateTimeImmutable( 'today', $tz );
+		$first   = $today->modify( '-' . ( $days - 1 ) . ' days' );
+		$offset  = (int) round( $tz->getOffset( $today ) / 60 );
+		$exclude = self::exclusion( $exclude );
+		$rows    = $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$wpdb->prepare(
+				'SELECT DATE(DATE_ADD(created_at, INTERVAL %d MINUTE)) AS d, agent, COUNT(*) AS n FROM %i WHERE kind = %d AND verification = %d AND created_at >= %s AND agent NOT IN (' . implode( ',', array_fill( 0, count( $exclude ), '%s' ) ) . ') GROUP BY d, agent',
+				array_merge( array( $offset, self::table(), self::KIND_CRAWLER, self::VERIFIED, self::utc( $first->getTimestamp() ) ), $exclude )
+			),
+			ARRAY_A
+		);
+		$out     = array();
+		for ( $day = $first; $day <= $today; $day = $day->modify( '+1 day' ) ) {
+			$out[ $day->format( 'Y-m-d' ) ] = array();
+		}
+		foreach ( (array) $rows as $r ) {
+			if ( isset( $out[ (string) $r['d'] ] ) ) {
+				$out[ (string) $r['d'] ][ (string) $r['agent'] ] = (int) $r['n'];
+			}
+		}
+		return $out;
+	}
+
+	/**
 	 * Has any verified crawler visit ever been recorded?
 	 */
 	public static function has_verified(): bool {

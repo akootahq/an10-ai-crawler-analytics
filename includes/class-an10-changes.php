@@ -82,6 +82,9 @@ final class AN10_Changes {
 		if ( is_wp_error( $preview ) ) {
 			return $preview;
 		}
+		if ( 'headings' === $type && ! empty( $preview['manual'] ) ) {
+			return new WP_Error( 'an10_manual', __( 'Some of these headings are set in blocks from another plugin, so they have to be changed in the editor. Nothing was written.', 'an10-ai-crawler-analytics' ) );
+		}
 		if ( ! hash_equals( self::fingerprint( $preview['after'] ), $expected_hash ) ) {
 			return new WP_Error( 'an10_changed', __( 'The page changed after the preview was shown. Nothing was written; review the change again.', 'an10-ai-crawler-analytics' ) );
 		}
@@ -384,8 +387,12 @@ final class AN10_Changes {
 		if ( $proposed === $levels ) {
 			return new WP_Error( 'an10_none', __( 'The headings on this page already follow one another without skipping a level.', 'an10-ai-crawler-analytics' ) );
 		}
-		$after = AN10_Content::rewrite_headings( $content, $proposed );
-		if ( null === $after ) {
+		// A heading to change inside another plugin's block (Kadence,
+		// GenerateBlocks, Spectra...) is that block's to change: the person does
+		// it in the editor, and nothing here is applied, not even in part.
+		$manual = AN10_Content::manual_changes( $content, $proposed );
+		$after  = $manual ? null : AN10_Content::rewrite_headings( $content, $proposed );
+		if ( null === $after && ! $manual ) {
 			return new WP_Error( 'an10_parse', __( 'The headings could not be read reliably, so no change is proposed.', 'an10-ai-crawler-analytics' ) );
 		}
 		$outline = static function ( array $lv ) use ( $headings ): array {
@@ -407,6 +414,7 @@ final class AN10_Changes {
 			'after'          => $after,
 			'before_outline' => $outline( $levels ),
 			'after_outline'  => $outline( $proposed ),
+			'manual'         => $manual,
 		);
 	}
 
@@ -419,6 +427,9 @@ final class AN10_Changes {
 	 * @return string|WP_Error Hash of the saved content.
 	 */
 	private static function write_headings( int $post_id, string $id, array $preview ) {
+		if ( ! is_string( $preview['after'] ) ) {
+			return new WP_Error( 'an10_manual', __( 'This change has to be made in the editor. Nothing was written.', 'an10-ai-crawler-analytics' ) );
+		}
 		$post = get_post( $post_id );
 		update_post_meta( $post_id, self::BEFORE_META . $id, wp_slash( (string) $post->post_content ) );
 		$result = wp_update_post(

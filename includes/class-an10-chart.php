@@ -114,4 +114,73 @@ final class AN10_Chart {
 	private static function esc( string $text ): string {
 		return htmlspecialchars( $text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
 	}
+
+	/**
+	 * Columns stacked by series, one per point, bottom series first.
+	 *
+	 * Each segment's height is its share of the column; the column's height
+	 * is its total against the axis. Series keep a fixed order and colour
+	 * (the caller's class), so a series that is absent one day never moves
+	 * the others. The tooltip names each series' count.
+	 *
+	 * @param array  $points  Each: label, title, segments (series key to count).
+	 * @param array  $series  Series key to CSS class, in stacking order, bottom first.
+	 * @param string $summary Accessible name of the chart.
+	 * @param string $nothing Shown when every column is empty.
+	 * @param int    $every   Label every nth column, counted back from the last.
+	 */
+	public static function stacked( array $points, array $series, string $summary, string $nothing, int $every = 7 ): string {
+		$totals             = array_map(
+			static function ( array $p ): int {
+				return (int) array_sum( array_map( 'intval', (array) ( $p['segments'] ?? array() ) ) );
+			},
+			array_values( $points )
+		);
+		$max                = $totals ? max( $totals ) : 0;
+		list( $top, $step ) = self::axis( $max );
+		$last               = count( $points ) - 1;
+
+		$grid = '';
+		for ( $tick = 0; $tick <= $top; $tick += $step ) {
+			$grid .= sprintf(
+				'<span class="an10-chart__tick" style="bottom:%s%%"><span>%s</span></span>',
+				self::pct( $tick, $top ),
+				self::esc( number_format( $tick ) )
+			);
+		}
+
+		$cols = '';
+		foreach ( array_values( $points ) as $i => $p ) {
+			$total = $totals[ $i ];
+			$bar   = '';
+			if ( $total > 0 ) {
+				$segs = '';
+				foreach ( $series as $key => $class ) {
+					$n = (int) ( $p['segments'][ $key ] ?? 0 );
+					if ( $n > 0 ) {
+						$segs .= sprintf( '<span class="an10-chart__seg %s" style="flex-grow:%d"></span>', self::esc( (string) $class ), $n );
+					}
+				}
+				$bar = sprintf( '<span class="an10-chart__bar an10-chart__bar--stack" style="height:%s%%" data-tip="%s">%s</span>', self::pct( $total, $top ), self::esc( (string) $p['title'] ), $segs );
+			}
+			$cols .= sprintf(
+				'<li class="an10-chart__col"%s%s>%s</li>',
+				$total > 0 ? ' tabindex="0" aria-label="' . self::esc( (string) $p['title'] ) . '"' : '',
+				$i === $last ? ' aria-current="date"' : '',
+				$bar
+			);
+		}
+
+		$labels = '';
+		foreach ( array_values( $points ) as $i => $p ) {
+			$show    = 0 === ( $last - $i ) % max( 1, $every );
+			$labels .= '<li>' . ( $show ? self::esc( (string) $p['label'] ) : '' ) . '</li>';
+		}
+
+		return '<figure class="an10-chart" role="group" aria-label="' . self::esc( $summary ) . '">'
+			. '<div class="an10-chart__plot">' . $grid
+			. '<ol class="an10-chart__cols">' . $cols . '</ol>'
+			. ( 0 === $max ? '<p class="an10-chart__empty">' . self::esc( $nothing ) . '</p>' : '' )
+			. '</div><ol class="an10-chart__x" aria-hidden="true">' . $labels . '</ol></figure>';
+	}
 }

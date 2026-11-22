@@ -74,4 +74,34 @@ final class ChartTest extends TestCase {
 		$this->assertStringNotContainsString( '<i>', $html );
 		$this->assertStringContainsString( 'data-tip="&quot;&gt;&lt;script&gt;', $html );
 	}
+
+	public function test_stacked_columns_keep_series_order_and_share_the_axis(): void {
+		$series = array(
+			'OpenAI'     => 'an10-seg--chatgpt',
+			'Anthropic'  => 'an10-seg--claude',
+			'Perplexity' => 'an10-seg--perplexity',
+			'Other'      => 'an10-seg--other',
+		);
+		$html   = AN10_Chart::stacked(
+			array(
+				array( 'label' => '1 Nov', 'title' => '1 Nov: 6 (OpenAI 4, Perplexity 2)', 'segments' => array( 'Perplexity' => 2, 'OpenAI' => 4 ) ),
+				array( 'label' => '2 Nov', 'title' => 'none', 'segments' => array() ),
+				array( 'label' => '3 Nov', 'title' => '3 Nov: 12 (Anthropic 12)', 'segments' => array( 'Anthropic' => 12 ) ),
+			),
+			$series,
+			'Fetches per day',
+			'Nothing yet'
+		);
+		// Segments follow the series order, not the order counts arrive in, and
+		// an empty series draws nothing.
+		$this->assertMatchesRegularExpression( '/an10-seg--chatgpt" style="flex-grow:4".*an10-seg--perplexity" style="flex-grow:2"/s', $html );
+		$this->assertStringNotContainsString( 'an10-seg--other', $html );
+		// The column height is the day's total against the shared axis (top 15 for 12).
+		$this->assertStringContainsString( 'style="height:40%" data-tip="1 Nov: 6 (OpenAI 4, Perplexity 2)"', $html );
+		$this->assertStringContainsString( 'style="height:80%" data-tip="3 Nov: 12 (Anthropic 12)"', $html );
+		// An empty day is not focusable and has no bar.
+		$this->assertSame( 2, substr_count( $html, 'tabindex="0"' ) );
+		$this->assertStringNotContainsString( 'Nothing yet', $html );
+		$this->assertStringContainsString( 'Nothing yet', AN10_Chart::stacked( array( array( 'label' => 'x', 'title' => 'x', 'segments' => array() ) ), $series, 'S', 'Nothing yet' ) );
+	}
 }
