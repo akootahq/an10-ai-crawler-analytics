@@ -41,6 +41,18 @@ final class AN10_Admin {
 		'Bingbot'   => 'Copilot',
 	);
 
+	/**
+	 * The daily chart's series: each AI crawler's operator, in stacking order
+	 * (bottom first), with its engine colour. Every other AI crawler is folded
+	 * into "Other", drawn in neutral grey.
+	 */
+	const CHART_SERIES = array(
+		'OpenAI'     => 'an10-seg--chatgpt',
+		'Anthropic'  => 'an10-seg--claude',
+		'Perplexity' => 'an10-seg--perplexity',
+		'Other'      => 'an10-seg--other',
+	);
+
 	const ENGINE_DOT = array(
 		'ChatGPT'    => 'chatgpt',
 		'OpenAI'     => 'chatgpt',
@@ -265,30 +277,78 @@ final class AN10_Admin {
 		);
 		echo '</div><p class="an10-coverage">' . esc_html( AN10_Coverage::statement() ) . ' ' . esc_html__( 'Visits from AI answers are a floor too: some AI apps hide where a visitor came from, and a visit from Google AI Overviews looks like any other Google search visit, so it is not counted here.', 'an10-ai-crawler-analytics' ) . '</p>';
 
-		// The last 30 days, by day.
-		$days   = AN10_Store::daily_verified( 30, AN10_Agents::SEARCH_ENGINES );
-		$points = array();
-		foreach ( $days as $day => $n ) {
-			$ts       = ( new DateTimeImmutable( $day, wp_timezone() ) )->getTimestamp();
+		// The last 30 days, by day, stacked by the crawler's operator.
+		$days      = AN10_Store::daily_verified_by_agent( 30, AN10_Agents::SEARCH_ENGINES );
+		$operators = array_column( AN10_Registry::crawlers(), 'operator', 'token' );
+		$names     = self::chart_series_names();
+		$points    = array();
+		$rows      = array();
+		foreach ( $days as $day => $agents ) {
+			$segments = array_fill_keys( array_keys( self::CHART_SERIES ), 0 );
+			foreach ( $agents as $token => $n ) {
+				$op                = (string) ( $operators[ $token ] ?? '' );
+				$key               = isset( self::CHART_SERIES[ $op ] ) ? $op : 'Other';
+				$segments[ $key ] += (int) $n;
+			}
+			$total = array_sum( $segments );
+			$ts    = ( new DateTimeImmutable( $day, wp_timezone() ) )->getTimestamp();
+			$parts = array();
+			foreach ( $segments as $key => $n ) {
+				if ( $n > 0 ) {
+					$parts[] = $names[ $key ] . ' ' . number_format_i18n( $n );
+				}
+			}
 			$points[] = array(
-				'label' => wp_date( 'j M', $ts ),
-				/* translators: 1: date, 2: fetches. */
-				'title' => sprintf( _n( '%1$s: %2$s verified fetch', '%1$s: %2$s verified fetches', $n, 'an10-ai-crawler-analytics' ), wp_date( 'j M Y', $ts ), number_format_i18n( $n ) ),
-				'value' => $n,
+				'label'    => wp_date( 'j M', $ts ),
+				'title'    => sprintf(
+					/* translators: 1: date, 2: fetches, 3: fetches per crawler operator. */
+					_n( '%1$s: %2$s verified fetch (%3$s)', '%1$s: %2$s verified fetches (%3$s)', $total, 'an10-ai-crawler-analytics' ),
+					wp_date( 'j M Y', $ts ),
+					number_format_i18n( $total ),
+					implode( ', ', $parts )
+				),
+				'segments' => $segments,
 			);
+			if ( $total > 0 ) {
+				$rows[ $day ] = $segments + array( 'total' => $total );
+			}
 		}
+		$present = array_keys(
+			array_filter(
+				array_fill_keys( array_keys( self::CHART_SERIES ), 0 ),
+				static function ( $unused, string $key ) use ( $rows ): bool {
+					return (bool) array_sum( array_column( $rows, $key ) );
+				},
+				ARRAY_FILTER_USE_BOTH
+			)
+		);
 		echo '<section class="an10-card an10-days"><div class="an10-card__head"><h2>' . esc_html__( 'Verified AI crawler fetches per day', 'an10-ai-crawler-analytics' ) . '</h2><span class="an10-muted">' . esc_html__( 'Last 30 days', 'an10-ai-crawler-analytics' ) . '</span></div>';
-		$chart = AN10_Chart::columns(
+		if ( $present ) {
+			echo '<ul class="an10-legend">';
+			foreach ( $present as $key ) {
+				printf( '<li><span class="an10-swatch %s" aria-hidden="true"></span>%s</li>', esc_attr( self::CHART_SERIES[ $key ] ), esc_html( $names[ $key ] ) );
+			}
+			echo '</ul>';
+		}
+		$chart = AN10_Chart::stacked(
 			$points,
-			__( 'Verified AI crawler fetches per day, last 30 days', 'an10-ai-crawler-analytics' ),
+			self::CHART_SERIES,
+			__( 'Verified AI crawler fetches per day, last 30 days, by crawler operator', 'an10-ai-crawler-analytics' ),
 			__( 'No verified fetch yet. Crawlers visit on their own schedule.', 'an10-ai-crawler-analytics' )
 		);
 		echo $chart; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- AN10_Chart escapes every label and attribute.
-		$active = array_filter( $days );
-		if ( $active ) {
-			echo '<details class="an10-data"><summary>' . esc_html__( 'Show as a table', 'an10-ai-crawler-analytics' ) . '</summary><table class="widefat"><thead><tr><th>' . esc_html__( 'Day', 'an10-ai-crawler-analytics' ) . '</th><th class="an10-num">' . esc_html__( 'Verified fetches', 'an10-ai-crawler-analytics' ) . '</th></tr></thead><tbody>';
-			foreach ( array_reverse( $active, true ) as $day => $n ) {
-				printf( '<tr><td>%s</td><td class="an10-num">%s</td></tr>', esc_html( wp_date( get_option( 'date_format' ), ( new DateTimeImmutable( $day, wp_timezone() ) )->getTimestamp() ) ), esc_html( number_format_i18n( $n ) ) );
+		if ( $rows ) {
+			echo '<details class="an10-data"><summary>' . esc_html__( 'Show as a table', 'an10-ai-crawler-analytics' ) . '</summary><table class="widefat"><thead><tr><th>' . esc_html__( 'Day', 'an10-ai-crawler-analytics' ) . '</th>';
+			foreach ( $present as $key ) {
+				echo '<th class="an10-num">' . esc_html( $names[ $key ] ) . '</th>';
+			}
+			echo '<th class="an10-num">' . esc_html__( 'Total', 'an10-ai-crawler-analytics' ) . '</th></tr></thead><tbody>';
+			foreach ( array_reverse( $rows, true ) as $day => $r ) {
+				echo '<tr><td>' . esc_html( wp_date( get_option( 'date_format' ), ( new DateTimeImmutable( $day, wp_timezone() ) )->getTimestamp() ) ) . '</td>';
+				foreach ( $present as $key ) {
+					echo '<td class="an10-num">' . esc_html( number_format_i18n( (int) $r[ $key ] ) ) . '</td>';
+				}
+				echo '<td class="an10-num">' . esc_html( number_format_i18n( (int) $r['total'] ) ) . '</td></tr>';
 			}
 			echo '</tbody></table></details>';
 		}
@@ -501,6 +561,20 @@ final class AN10_Admin {
 	 * @param int $spoofed    Spoofed crawler hits.
 	 * @param int $unverified Hits that could not be checked.
 	 */
+	/**
+	 * The chart series' names, as shown in the legend, tooltip and table.
+	 *
+	 * @return array<string, string>
+	 */
+	private static function chart_series_names(): array {
+		return array(
+			'OpenAI'     => 'OpenAI',
+			'Anthropic'  => 'Anthropic',
+			'Perplexity' => 'Perplexity',
+			'Other'      => __( 'Other AI crawlers', 'an10-ai-crawler-analytics' ),
+		);
+	}
+
 	private static function hero( int $verified, int $spoofed, int $unverified ): void {
 		$zero = 0 === $spoofed;
 		$sub  = $zero
@@ -508,12 +582,12 @@ final class AN10_Admin {
 			: __( 'Caught using a real crawler\'s name from an address its operator does not publish.', 'an10-ai-crawler-analytics' );
 		printf(
 			'<section class="an10-card an10-hero"><span class="an10-hero__eyebrow">%s</span>' .
-			'<div class="an10-hero__main"><span class="an10-hero__label">%s</span>' .
+			'<div class="an10-hero__main"><span class="an10-hero__label"><span class="an10-mark is-spoofed" aria-hidden="true"></span>%s</span>' .
 			'<span class="%s">%s</span><span class="an10-hero__sub">%s</span></div>' .
 			'<div class="an10-hero__side">' .
-			'<div class="an10-kpi"><span class="an10-kpi__label">%s</span><span class="an10-kpi__value">%s</span></div>' .
-			'<div class="an10-kpi"><span class="an10-kpi__label">%s</span><span class="an10-kpi__value">%s</span></div>' .
-			'</div></section>',
+			'<div class="an10-kpi"><span class="an10-kpi__label"><span class="an10-mark is-verified" aria-hidden="true"></span>%s</span><span class="an10-kpi__value">%s</span></div>' .
+			'<div class="an10-kpi"><span class="an10-kpi__label"><span class="an10-mark is-unverified" aria-hidden="true"></span>%s</span><span class="an10-kpi__value">%s</span></div>' .
+			'</div>%s</section>',
 			esc_html__( 'Crawler identity checks, last 30 days', 'an10-ai-crawler-analytics' ),
 			esc_html__( 'Spoofed crawler visits', 'an10-ai-crawler-analytics' ),
 			esc_attr( $zero ? 'an10-hero__num an10-hero__num--zero' : 'an10-hero__num' ),
@@ -522,7 +596,46 @@ final class AN10_Admin {
 			esc_html__( 'Verified', 'an10-ai-crawler-analytics' ),
 			esc_html( number_format_i18n( $verified ) ),
 			esc_html__( 'Unverified', 'an10-ai-crawler-analytics' ),
-			esc_html( number_format_i18n( $unverified ) )
+			esc_html( number_format_i18n( $unverified ) ),
+			self::split_bar( $verified, $unverified, $spoofed ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- split_bar() escapes.
+		);
+	}
+
+	/**
+	 * One thin bar: the verified, unverified and spoofed shares of claimed
+	 * crawler visits. The numbers above it carry the meaning; the bar shows
+	 * the proportion.
+	 *
+	 * @param int $verified   Verified visits.
+	 * @param int $unverified Unverified visits.
+	 * @param int $spoofed    Spoofed visits.
+	 */
+	private static function split_bar( int $verified, int $unverified, int $spoofed ): string {
+		if ( $verified + $unverified + $spoofed <= 0 ) {
+			return '';
+		}
+		$out = '';
+		foreach ( array(
+			'is-verified'   => $verified,
+			'is-unverified' => $unverified,
+			'is-spoofed'    => $spoofed,
+		) as $class => $n ) {
+			if ( $n > 0 ) {
+				$out .= sprintf( '<span class="%s" style="flex-grow:%d"></span>', esc_attr( $class ), $n );
+			}
+		}
+		return sprintf(
+			'<div class="an10-split" role="img" aria-label="%s">%s</div>',
+			esc_attr(
+				sprintf(
+					/* translators: 1: verified, 2: unverified, 3: spoofed visits. */
+					__( '%1$s verified, %2$s unverified and %3$s spoofed crawler visits', 'an10-ai-crawler-analytics' ),
+					number_format_i18n( $verified ),
+					number_format_i18n( $unverified ),
+					number_format_i18n( $spoofed )
+				)
+			),
+			$out
 		);
 	}
 
@@ -544,7 +657,7 @@ final class AN10_Admin {
 	private static function render_findings( array $counts, array $blocked ): void {
 		$rows = array();
 		if ( $blocked ) {
-			$rows[] = array( __( 'AI search or user crawlers blocked by robots.txt', 'an10-ai-crawler-analytics' ), count( $blocked ), self::url( 'overview', array( 'fix' => 'robots' ) ), __( 'Allow them', 'an10-ai-crawler-analytics' ) );
+			$rows[] = array( __( 'AI search or user crawlers blocked by robots.txt', 'an10-ai-crawler-analytics' ), count( $blocked ), self::url( 'overview', array( 'fix' => 'robots' ) ), __( 'Allow them', 'an10-ai-crawler-analytics' ), 'bad' );
 		}
 		$actions = array(
 			'noindex_menu' => array( self::url( 'pages', array( 'flag' => 'noindex_menu' ) ), __( 'Show me', 'an10-ai-crawler-analytics' ) ),
@@ -556,15 +669,15 @@ final class AN10_Admin {
 		);
 		foreach ( $actions as $flag => $action ) {
 			if ( ! empty( $counts[ $flag ] ) ) {
-				$rows[] = array( self::flag_label( $flag ), $counts[ $flag ], $action[0], $action[1] );
+				$rows[] = array( self::flag_label( $flag ), $counts[ $flag ], $action[0], $action[1], 'finding' );
 			}
 		}
 		$llms = AN10_Site::llms_txt( true );
 		if ( 'other-invalid' === $llms ) {
-			$rows[] = array( __( 'Another plugin serves /llms.txt, but not in the llms.txt format (it has no "# Title" first line)', 'an10-ai-crawler-analytics' ), '—', home_url( '/llms.txt' ), __( 'Show me', 'an10-ai-crawler-analytics' ) );
+			$rows[] = array( __( 'Another plugin serves /llms.txt, but not in the llms.txt format (it has no "# Title" first line)', 'an10-ai-crawler-analytics' ), '—', home_url( '/llms.txt' ), __( 'Show me', 'an10-ai-crawler-analytics' ), 'finding' );
 		}
 		if ( 'none' === $llms ) {
-			$rows[] = array( __( 'No llms.txt (neutral: no major AI engine has said it reads one)', 'an10-ai-crawler-analytics' ), '—', self::url( 'overview', array( 'fix' => 'llms' ) ), __( 'Generate one', 'an10-ai-crawler-analytics' ) );
+			$rows[] = array( __( 'No llms.txt (neutral: no major AI engine has said it reads one)', 'an10-ai-crawler-analytics' ), '—', self::url( 'overview', array( 'fix' => 'llms' ) ), __( 'Generate one', 'an10-ai-crawler-analytics' ), 'info' );
 		}
 
 		echo '<h2>' . esc_html__( 'Findings', 'an10-ai-crawler-analytics' ) . '</h2>';
@@ -574,7 +687,7 @@ final class AN10_Admin {
 		}
 		echo '<table class="widefat an10-table"><thead><tr><th>' . esc_html__( 'Finding', 'an10-ai-crawler-analytics' ) . '</th><th class="an10-num">' . esc_html__( 'Pages', 'an10-ai-crawler-analytics' ) . '</th><th class="an10-num"><span class="screen-reader-text">' . esc_html__( 'Action', 'an10-ai-crawler-analytics' ) . '</span></th></tr></thead><tbody>';
 		foreach ( $rows as $r ) {
-			printf( '<tr><td>%s</td><td class="an10-num">%s</td><td class="an10-num"><a class="button" href="%s">%s</a></td></tr>', esc_html( $r[0] ), esc_html( (string) $r[1] ), esc_url( $r[2] ), esc_html( $r[3] ) );
+			printf( '<tr><td><span class="an10-finding">%s<span>%s</span></span></td><td class="an10-num">%s</td><td class="an10-num"><a class="button" href="%s">%s</a></td></tr>', self::status_tag( $r[4] ), esc_html( $r[0] ), esc_html( (string) $r[1] ), esc_url( $r[2] ), esc_html( $r[3] ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- status_tag() escapes.
 		}
 		echo '</tbody></table>';
 		$seo = AN10_Site::seo_plugins();
@@ -613,6 +726,15 @@ final class AN10_Admin {
 			echo '<p><a href="' . esc_url( self::url( 'pages' ) ) . '">' . esc_html__( 'All pages', 'an10-ai-crawler-analytics' ) . '</a></p>';
 		}
 		echo '<p class="description">' . esc_html__( 'Counts, not grades. "Words before the first h2" is shown without a verdict: there is no measured threshold for it.', 'an10-ai-crawler-analytics' ) . '</p>';
+		$skipped = array_filter(
+			$ids,
+			static function ( int $id ): bool {
+				return in_array( 'skip', explode( ',', (string) get_post_meta( $id, AN10_Scanner::FLAGS, true ) ), true );
+			}
+		);
+		if ( $skipped ) {
+			echo '<p class="description">' . esc_html( self::skip_why() ) . '</p>';
+		}
 		echo '<table class="widefat an10-table"><thead><tr><th>' . esc_html__( 'Page', 'an10-ai-crawler-analytics' ) . '</th><th class="an10-num">' . esc_html__( 'Words', 'an10-ai-crawler-analytics' ) . '</th><th class="an10-num">' . esc_html__( 'Words before the first h2', 'an10-ai-crawler-analytics' ) . '</th><th class="an10-num">' . esc_html__( 'Question headings', 'an10-ai-crawler-analytics' ) . '</th><th class="an10-mid">' . esc_html__( 'Structured data', 'an10-ai-crawler-analytics' ) . '</th><th>' . esc_html__( 'Findings', 'an10-ai-crawler-analytics' ) . '</th><th class="an10-num"><span class="screen-reader-text">' . esc_html__( 'Action', 'an10-ai-crawler-analytics' ) . '</span></th></tr></thead><tbody>';
 		if ( ! $ids ) {
 			echo '<tr><td colspan="7" class="an10-muted">' . esc_html(
@@ -639,8 +761,18 @@ final class AN10_Admin {
 					)
 				) . '">' . esc_html__( 'Propose edit', 'an10-ai-crawler-analytics' ) . '</a>'
 				: '';
+			// One finding per line, each escaped.
+			$findings = implode(
+				'<br>',
+				array_map(
+					static function ( string $f ) use ( $facts ): string {
+						return esc_html( 'skip' === $f ? self::skip_sentence( $facts ) : self::flag_label( $f ) );
+					},
+					$flags
+				)
+			);
 			printf(
-				'<tr><td><a href="%s">%s</a> <a href="%s" class="an10-muted">%s</a></td><td class="an10-num">%d</td><td class="an10-num">%s</td><td class="an10-num">%d</td><td class="an10-mid">%s</td><td>%s</td><td class="an10-num">%s</td></tr>',
+				'<tr><td><a href="%s">%s</a> <a href="%s" class="an10-muted">%s</a></td><td class="an10-num">%d</td><td class="an10-num">%s</td><td class="an10-num">%d</td><td class="an10-mid">%s</td><td class="an10-findings">%s</td><td class="an10-num">%s</td></tr>',
 				esc_url( (string) get_permalink( $id ) ),
 				esc_html( get_the_title( $id ) ),
 				esc_url( (string) get_edit_post_link( $id ) ),
@@ -649,7 +781,7 @@ final class AN10_Admin {
 				null === $facts['words_before_first_h2'] ? esc_html__( 'no h2', 'an10-ai-crawler-analytics' ) : (int) $facts['words_before_first_h2'],
 				(int) $facts['question_headings'],
 				esc_html( $schema ),
-				esc_html( implode( '; ', array_map( array( self::class, 'flag_label' ), $flags ) ) ),
+				$findings, // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- each finding escaped above.
 				$action // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built from escaped parts above.
 			);
 		}
@@ -848,8 +980,14 @@ final class AN10_Admin {
 
 		if ( 'headings' === $fix ) {
 			echo '<h2>' . esc_html( get_the_title( $post_id ) ) . '</h2><p>' . esc_html__( 'A proposal for you to review. Which level a heading belongs at is an editorial decision, so this is never applied without you. Only the heading levels change; the text stays as it is.', 'an10-ai-crawler-analytics' ) . '</p>';
-			echo '<div class="an10-panels"><section class="an10-panel"><h3>' . esc_html__( 'Now', 'an10-ai-crawler-analytics' ) . '</h3>' . self::outline( $preview['before_outline'] ) . '</section>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- outline() escapes.
-			echo '<section class="an10-panel"><h3>' . esc_html__( 'Proposed', 'an10-ai-crawler-analytics' ) . '</h3>' . self::outline( $preview['after_outline'] ) . '</section></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- outline() escapes.
+			echo '<p class="description">' . esc_html( self::skip_why() ) . '</p>';
+			$skips = AN10_Content::skips( array_column( $preview['before_outline'], 'level' ) );
+			echo '<div class="an10-panels"><section class="an10-panel"><h3>' . esc_html__( 'Now', 'an10-ai-crawler-analytics' ) . '</h3>' . self::outline( $preview['before_outline'], $skips ) . '</section>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- outline() escapes.
+			echo '<section class="an10-panel"><h3>' . esc_html__( 'Proposed', 'an10-ai-crawler-analytics' ) . '</h3>' . self::outline( $preview['after_outline'], array(), array_column( (array) ( $preview['manual'] ?? array() ), 'index' ) ) . '</section></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- outline() escapes.
+			if ( ! empty( $preview['manual'] ) ) {
+				self::manual_steps( $post_id, $preview['manual'] );
+				return;
+			}
 		} elseif ( 'robots' === $fix ) {
 			echo '<h2>' . esc_html__( 'Allow AI search and user crawlers', 'an10-ai-crawler-analytics' ) . '</h2><p>' . esc_html__( 'These lines are added to the robots.txt WordPress serves. Training crawlers are left as they are.', 'an10-ai-crawler-analytics' ) . '</p>';
 			echo '<pre class="an10-pre">' . esc_html( $preview['after'] ) . '</pre>';
@@ -1099,17 +1237,26 @@ final class AN10_Admin {
 	 * @param string $status ok, finding, bad or info.
 	 * @param string $text   Text.
 	 */
-	private static function check_item( string $status, string $text ): void {
+	/**
+	 * A small tinted label that says the state in words: Passed, Finding or
+	 * Problem. The colour repeats the word; it never replaces it.
+	 *
+	 * @param string $status ok, finding or bad.
+	 */
+	private static function status_tag( string $status ): string {
 		$words = array(
-			'ok'      => __( 'Passed:', 'an10-ai-crawler-analytics' ),
-			'finding' => __( 'Finding:', 'an10-ai-crawler-analytics' ),
-			'bad'     => __( 'Problem:', 'an10-ai-crawler-analytics' ),
-			'info'    => '',
+			'ok'      => __( 'Passed', 'an10-ai-crawler-analytics' ),
+			'finding' => __( 'Finding', 'an10-ai-crawler-analytics' ),
+			'bad'     => __( 'Problem', 'an10-ai-crawler-analytics' ),
 		);
+		return isset( $words[ $status ] ) ? '<span class="an10-tag an10-tag--' . esc_attr( $status ) . '">' . esc_html( $words[ $status ] ) . '</span>' : '<span></span>';
+	}
+
+	private static function check_item( string $status, string $text ): void {
 		printf(
 			'<li class="is-%s">%s<span>%s</span></li>',
 			esc_attr( $status ),
-			'' === $words[ $status ] ? '' : '<span class="screen-reader-text">' . esc_html( $words[ $status ] ) . '</span>',
+			self::status_tag( $status ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- status_tag() escapes.
 			esc_html( $text )
 		);
 	}
@@ -1118,13 +1265,110 @@ final class AN10_Admin {
 	 * A heading outline.
 	 *
 	 * @param array $outline Headings with level and text.
+	 * @param array $skips   Skipped levels to mark, from AN10_Content::skips().
+	 * @param int[] $by_hand Headings that have to be changed in the editor.
 	 */
-	private static function outline( array $outline ): string {
+	private static function outline( array $outline, array $skips = array(), array $by_hand = array() ): string {
+		$marks = array();
+		foreach ( $skips as $skip ) {
+			$marks[ (int) $skip['index'] ] = AN10_Content::level_range( (int) $skip['from'] + 1, (int) $skip['to'] - 1 );
+		}
 		$out = '<ol class="an10-outline">';
-		foreach ( $outline as $h ) {
-			$out .= sprintf( '<li style="margin-left:%dem"><code>h%d</code> %s</li>', ( (int) $h['level'] - 2 ) * 1.5, (int) $h['level'], esc_html( $h['text'] ) );
+		foreach ( array_values( $outline ) as $i => $h ) {
+			$mark = isset( $marks[ $i ] )
+				? ' <span class="an10-skip">' . esc_html(
+					/* translators: %s: the skipped heading levels, e.g. "h2". */
+					sprintf( __( '%s skipped here', 'an10-ai-crawler-analytics' ), $marks[ $i ] )
+				) . '</span>'
+				: '';
+			if ( in_array( $i, $by_hand, true ) ) {
+				$mark .= ' <span class="an10-skip">' . esc_html__( 'change in the editor', 'an10-ai-crawler-analytics' ) . '</span>';
+			}
+			$out .= sprintf( '<li style="margin-left:%dem"><code>h%d</code> %s%s</li>', max( 0, (int) $h['level'] - 2 ) * 1.5, (int) $h['level'], esc_html( $h['text'] ), $mark );
 		}
 		return $out . '</ol>';
+	}
+
+	/**
+	 * Why a skipped heading level is worth fixing, and how much. Said once
+	 * wherever the finding is listed.
+	 */
+	private static function skip_why(): string {
+		return __( 'Screen readers and outline tools expect headings to step down one level at a time. A skipped level is a minor fix, and there is no evidence it changes AI citations.', 'an10-ai-crawler-analytics' );
+	}
+
+	/**
+	 * The first skipped level on a page, in words: which heading, and what it
+	 * skips. From the stored scan, so it needs no rescan.
+	 *
+	 * @param array $facts Stored page facts.
+	 */
+	public static function skip_sentence( array $facts ): string {
+		$skip = AN10_Content::first_skip( (array) ( $facts['headings'] ?? array() ), (array) ( $facts['skips'] ?? array() ) );
+		if ( null === $skip ) {
+			return self::flag_label( 'skip' );
+		}
+		$many = $skip['count'] > 1;
+		if ( $skip['from'] <= 1 ) {
+			return sprintf(
+				/* translators: 1: heading text, 2: its level, 3: the skipped levels, e.g. "h2". */
+				$many ? __( '"%1$s" is an h%2$d right after the title, so %3$s are skipped', 'an10-ai-crawler-analytics' ) : __( '"%1$s" is an h%2$d right after the title, so %3$s is skipped', 'an10-ai-crawler-analytics' ),
+				$skip['text'],
+				$skip['to'],
+				$skip['skipped']
+			);
+		}
+		return sprintf(
+			/* translators: 1: heading text, 2: its level, 3: the level before it, 4: the skipped levels, e.g. "h3". */
+			$many ? __( '"%1$s" is an h%2$d right after an h%3$d, so %4$s are skipped', 'an10-ai-crawler-analytics' ) : __( '"%1$s" is an h%2$d right after an h%3$d, so %4$s is skipped', 'an10-ai-crawler-analytics' ),
+			$skip['text'],
+			$skip['to'],
+			$skip['from'],
+			$skip['skipped']
+		);
+	}
+
+	/**
+	 * Headings set in another plugin's block: what to change by hand, where,
+	 * and to which level. No Apply button: a partial change is never made.
+	 *
+	 * @param int   $post_id Post.
+	 * @param array $manual  From AN10_Content::manual_changes().
+	 */
+	private static function manual_steps( int $post_id, array $manual ): void {
+		echo '<h3 class="an10-manual">' . esc_html__( 'Change these in the editor', 'an10-ai-crawler-analytics' ) . '</h3><p>' . esc_html__( 'These headings are in blocks from another plugin, which keep their own heading level. Changing them from here would break those blocks, so nothing is applied from this page.', 'an10-ai-crawler-analytics' ) . '</p><ul class="an10-list">';
+		foreach ( $manual as $m ) {
+			printf(
+				'<li>%s</li>',
+				esc_html(
+					sprintf(
+						/* translators: 1: heading text, 2: the block's name in the editor, 3: proposed level. */
+						__( '"%1$s": select its %2$s block and set it to H%3$d.', 'an10-ai-crawler-analytics' ),
+						(string) $m['text'],
+						self::block_title( (string) $m['block'] ),
+						(int) $m['to']
+					)
+				)
+			);
+		}
+		echo '</ul><p>' . esc_html__( 'Then come back to this page: anything left to change is offered here.', 'an10-ai-crawler-analytics' ) . '</p>';
+		$edit = get_edit_post_link( $post_id );
+		if ( $edit ) {
+			printf( '<p><a class="button" href="%s">%s</a></p>', esc_url( $edit ), esc_html__( 'Open in the editor', 'an10-ai-crawler-analytics' ) );
+		}
+	}
+
+	/**
+	 * A block's name as the editor shows it ("Advanced Text"), or its internal
+	 * name when the plugin that adds it is not active.
+	 *
+	 * @param string $name Block name, such as kadence/advancedheading.
+	 */
+	private static function block_title( string $name ): string {
+		$type = WP_Block_Type_Registry::get_instance()->get_registered( $name );
+		return $type && '' !== (string) $type->title
+			? sprintf( '"%s"', $type->title )
+			: $name;
 	}
 
 	/**
