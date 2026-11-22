@@ -4,13 +4,15 @@ Tags: ai crawler, robots.txt, chatgpt, analytics, aeo
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 0.2.0
+Stable tag: 0.2.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 See which AI bots really crawl your site. GPTBot & ClaudeBot verified against published IPs. Self-hosted, open source, no account, stores no IPs.
 
 == Description ==
+
+https://www.youtube.com/watch?v=IleQzrTKfOc
 
 **Half the "AI crawlers" in your logs may be fake.** Most AI crawler logs trust the user agent. Anyone can send `User-agent: GPTBot`. This plugin checks every claimed AI crawler visit against the IP addresses its operator publishes, and labels it **Verified**, **Spoofed** or **Unverified**. Only verified visits are ever counted as crawler visits. A visit is called Spoofed only when there is no doubt: if it came through a proxy whose real visitor address the plugin cannot see, or the operator's list could not be refreshed for a week, it is Unverified instead, so a real crawler is never accused.
 
@@ -99,6 +101,9 @@ The admin screens use the Inter and JetBrains Mono typefaces, bundled under the 
 4. Fix it on the spot — a heading proposal to review. Only the heading levels change, and nothing is applied without you.
 
 == Changelog ==
+
+= 0.2.1 =
+* Listing: added a short demo video to the plugin page and refreshed the screenshots. No code changes.
 
 = 0.2.0 =
 * New: the Overview now leads with the number of spoofed crawler visits, the ones using a real crawler's name from an address its operator does not publish, so the one figure only this plugin can show is the first thing you see.
