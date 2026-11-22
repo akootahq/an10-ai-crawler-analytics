@@ -5,3 +5,5 @@
 *.zip
 .env
 .env.*
+/test-evidence
+/demo-media

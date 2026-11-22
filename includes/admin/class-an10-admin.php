@@ -67,7 +67,7 @@ final class AN10_Admin {
 		add_action( 'admin_init', array( self::class, 'activation_redirect' ) );
 		add_action( 'admin_enqueue_scripts', array( self::class, 'assets' ) );
 		add_action( 'admin_notices', array( self::class, 'first_data_notice' ) );
-		foreach ( array( 'apply', 'undo', 'rescan', 'settings', 'refresh_lists', 'dismiss', 'verification' ) as $action ) {
+		foreach ( array( 'apply', 'undo', 'rescan', 'settings', 'refresh_lists', 'dismiss', 'verification', 'export' ) as $action ) {
 			add_action( "admin_post_an10_{$action}", array( self::class, "handle_{$action}" ) );
 		}
 		add_filter( 'plugin_action_links_' . plugin_basename( AN10_FILE ), array( self::class, 'action_links' ) );
@@ -439,6 +439,12 @@ final class AN10_Admin {
 				sprintf( __( 'Not counted: %1$d spoofed (a crawler\'s name from an address its operator does not publish) and %2$d that could not be checked.', 'an10-ai-crawler-analytics' ), $spoofed, $unverified )
 			) . '</p>';
 		}
+		if ( AN10_Store::has_rows() ) {
+			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="an10-export">';
+			wp_nonce_field( 'an10_export' );
+			echo '<input type="hidden" name="action" value="an10_export">';
+			echo '<button type="submit" class="button">' . esc_html__( 'Export CSV', 'an10-ai-crawler-analytics' ) . '</button> <span class="an10-muted">' . esc_html__( 'Every recorded visit, from your database only.', 'an10-ai-crawler-analytics' ) . '</span></form>';
+		}
 		echo '</section></div>';
 
 		self::render_findings( $counts, $blocked );
@@ -608,6 +614,13 @@ final class AN10_Admin {
 		}
 		echo '<p class="description">' . esc_html__( 'Counts, not grades. "Words before the first h2" is shown without a verdict: there is no measured threshold for it.', 'an10-ai-crawler-analytics' ) . '</p>';
 		echo '<table class="widefat an10-table"><thead><tr><th>' . esc_html__( 'Page', 'an10-ai-crawler-analytics' ) . '</th><th class="an10-num">' . esc_html__( 'Words', 'an10-ai-crawler-analytics' ) . '</th><th class="an10-num">' . esc_html__( 'Words before the first h2', 'an10-ai-crawler-analytics' ) . '</th><th class="an10-num">' . esc_html__( 'Question headings', 'an10-ai-crawler-analytics' ) . '</th><th class="an10-mid">' . esc_html__( 'Structured data', 'an10-ai-crawler-analytics' ) . '</th><th>' . esc_html__( 'Findings', 'an10-ai-crawler-analytics' ) . '</th><th class="an10-num"><span class="screen-reader-text">' . esc_html__( 'Action', 'an10-ai-crawler-analytics' ) . '</span></th></tr></thead><tbody>';
+		if ( ! $ids ) {
+			echo '<tr><td colspan="7" class="an10-muted">' . esc_html(
+				'' === $flag
+					? __( 'No pages scanned yet. Page facts appear here after the scan runs, once you have a published page.', 'an10-ai-crawler-analytics' )
+					: __( 'No page has this finding right now.', 'an10-ai-crawler-analytics' )
+			) . '</td></tr>';
+		}
 		foreach ( $ids as $id ) {
 			$facts = AN10_Scanner::facts( $id );
 			if ( ! $facts ) {
@@ -924,6 +937,28 @@ final class AN10_Admin {
 		AN10_Scanner::start_full_scan();
 		self::set_flash( 'success', __( 'Rescan started.', 'an10-ai-crawler-analytics' ) );
 		wp_safe_redirect( self::url() );
+		exit;
+	}
+
+	/**
+	 * Stream the stored crawler-visit rows as a CSV download. Local database
+	 * only, no external call. Columns match AN10_Store::csv_header().
+	 */
+	public static function handle_export(): void {
+		check_admin_referer( 'an10_export' );
+		if ( ! current_user_can( self::CAP ) ) {
+			wp_die( esc_html__( 'Not allowed.', 'an10-ai-crawler-analytics' ) );
+		}
+		$rows = AN10_Store::export_rows();
+		nocache_headers();
+		header( 'Content-Type: text/csv; charset=utf-8' );
+		header( 'Content-Disposition: attachment; filename="an10-crawler-visits-' . gmdate( 'Y-m-d' ) . '.csv"' );
+		$out = fopen( 'php://output', 'w' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- streaming a download to the client, not writing a file.
+		fputcsv( $out, AN10_Store::csv_header() );
+		foreach ( $rows as $row ) {
+			fputcsv( $out, AN10_Store::csv_row( $row ) );
+		}
+		fclose( $out ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- php://output stream.
 		exit;
 	}
 

@@ -335,6 +335,14 @@ body.toplevel_page_an10-ai-crawler-analytics #wpwrap {
 	padding-bottom: 6px;
 }
 
+.an10 .an10-export {
+	margin-top: 16px;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
 /* Figures: three numbers first. */
 .an10 .an10-kpis {
 	display: grid;
